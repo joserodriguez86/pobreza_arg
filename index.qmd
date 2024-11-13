@@ -13,7 +13,9 @@ format:
       collapsed: false
     grid:
       body-width: 1000px
-  pdf: default
+  pdf:
+    toc: true
+    number-sections: true
 ---
 
 ```{r Librerías y bases, message=FALSE, warning=FALSE, echo=FALSE}
