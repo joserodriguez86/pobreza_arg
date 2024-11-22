@@ -21,11 +21,13 @@ format:
 ```{r Librerías y bases, message=FALSE, warning=FALSE, echo=FALSE}
 
 rm(list = ls())
-pacman::p_load(tidyverse, eph, ggsci, flextable, ggrepel, GDAtools)
+pacman::p_load(tidyverse, eph, ggsci, flextable, ggrepel, GDAtools, plotly)
 
 eph <- get_microdata(2016:2024, type = "individual", period = c(1:4))
 
 canastas <- readxl::read_xlsx("fuentes/canastas_serie.xlsx")
+
+theme_set(theme_bw())
 ```
 
 
@@ -129,6 +131,33 @@ eph <- eph %>%
                                      NIVEL_ED == 6 ~ "Hasta terciario/universitario completo",
                                      TRUE ~ NA_character_),
          nivel_educativo = factor(nivel_educativo))
+
+
+#Distancias a la pobreza
+eph <- eph %>% 
+  mutate(distancia_pobreza = (ITF - CBT_hogar)/CBT_hogar) %>% 
+  mutate(distancia_pobreza2 = factor(case_when(
+    distancia_pobreza <= -.9 & distancia_pobreza > -1 ~ "-100%",
+    distancia_pobreza <= -.8 & distancia_pobreza > -.9 ~ "-90%",
+    distancia_pobreza <= -.7 & distancia_pobreza > -.8 ~ "-80%",
+    distancia_pobreza <= -.6 & distancia_pobreza > -.7 ~ "-70%",
+    distancia_pobreza <= -.5 & distancia_pobreza > -.6 ~ "-60%",
+    distancia_pobreza <= -.4 & distancia_pobreza > -.5 ~ "-50%",
+    distancia_pobreza <= -.3 & distancia_pobreza > -.4 ~ "-40%",
+    distancia_pobreza <= -.2 & distancia_pobreza > -.3 ~ "-30%",
+    distancia_pobreza <= -.1 & distancia_pobreza > -.2 ~ "-20%",
+    distancia_pobreza <= 0 & distancia_pobreza > -.1 ~ "-10%",
+    distancia_pobreza > 0 ~ "No pobre",
+    TRUE ~ NA_character_), levels = c("-100%", "-90%", "-80%", "-70%", "-60%", "-50%", "-40%", "-30%", "-20%", "-10%", "No pobre"))) %>% 
+  mutate(distancia_pobreza3 = factor(case_when(
+    distancia_pobreza <= -.5 & distancia_pobreza > -1 ~ "-100%/-50%",
+    distancia_pobreza <= -.2 & distancia_pobreza > -.5 ~ "-49%/-20%",
+    distancia_pobreza < 0 & distancia_pobreza > -.2 ~ "-19%/0%",
+    distancia_pobreza >= 0 & distancia_pobreza <=.2 ~ "1%/20%",
+    distancia_pobreza > .2 & distancia_pobreza <=.5 ~ "11/50%",
+    distancia_pobreza > .5 & distancia_pobreza <=1 ~ "51%/100%",
+    distancia_pobreza > 1 ~ "Más de 100%",
+    TRUE ~ NA_character_), levels = c("-100%/-50%", "-49%/-20%", "-19%/0%", "1%/20%", "11/50%", "51%/100%", "Más de 100%")))
 
 ```
 
@@ -305,6 +334,7 @@ eph$cobhe_f <- factor(eph$cobhe,
 
 ```{r Evolución de la pobreza, message=FALSE, warning=FALSE, echo=FALSE}
 eph %>%
+  filter(ano_sem != "2016-1") %>%
   group_by(ano_sem) %>% 
   summarise(porcentaje_pobreza = weighted.mean(pobreza_dic, PONDIH, na.rm = T),
             porcentaje_indigencia = weighted.mean(indigente, PONDIH, na.rm = T)) %>% 
@@ -316,16 +346,15 @@ eph %>%
                        group = situacion)) +
   geom_point(size = 2) +
   geom_line(linewidth = .7) +
-  geom_text(data = . %>% filter(ano_sem == "2024-1"), 
+  geom_text(data = . %>% filter(ano_sem == "2024-1" | ano_sem == "2016-2"), 
             aes(label = scales::percent(porcentaje, accuracy = 0.1)),
-            vjust = -0.5, 
-            hjust = 1.2,
+            vjust = -1, 
+            hjust = .5,
             show.legend = FALSE,
-            size = 3.3) +
-  theme_minimal() +
-  labs(title = "Evolucion de la población bajo la línea de pobreza e indigencia",  
-       subtitle = "Argentina urbana, 2016-2024 (semestres)",
-       caption = "Fuente: elaboración propia en base a EPH-INDEC.") +
+            size = 3) +
+  # labs(title = "Evolucion de la población bajo la línea de pobreza e indigencia",  
+  #      subtitle = "Argentina urbana, 2016-2024 (semestres)",
+  #      caption = "Fuente: elaboración propia en base a EPH-INDEC.") +
   theme(plot.title = element_text(size = 11),
         plot.subtitle = element_text(size = 9),
         legend.title = element_blank(),
@@ -355,10 +384,9 @@ eph %>%
                        group = situacion)) +
   geom_point(size = 2) +
   geom_line(linewidth = .7) +
-  theme_minimal() +
-  labs(title = "Evolucion de la población bajo la línea de pobreza e indigencia",  
-       subtitle = "Argentina urbana, 2016-2024 (trimestres)",
-       caption = "Fuente: elaboración propia en base a EPH-INDEC.") +
+  # labs(title = "Evolucion de la población bajo la línea de pobreza e indigencia",  
+  #      subtitle = "Argentina urbana, 2016-2024 (trimestres)",
+  #      caption = "Fuente: elaboración propia en base a EPH-INDEC.") +
   theme(plot.title = element_text(size = 11),
         plot.subtitle = element_text(size = 9),
         legend.title = element_blank(),
@@ -384,25 +412,30 @@ ggsave("salidas/pobreza_evolucion_trimestres.jpg", dpi = 300, width = 8, height 
 ### Evolución del coeficiente de Gini 
 
 ```{r Evolución del gini, message=FALSE, warning=FALSE, echo=FALSE}
+
 eph <- eph %>% 
-  group_by(ano_sem, CODUSU, NRO_HOGAR) %>%
+  group_by(ano_trim, CODUSU, NRO_HOGAR) %>%
   mutate(miembros = n()) %>% 
   ungroup() %>% 
   mutate(ipcf2 = ITF / miembros)
 
 eph %>%
-  group_by(ano_sem) %>% 
+  group_by(ano_trim) %>% 
   summarise(gini = dineq::gini.wtd(ipcf2, PONDIH)) %>% 
-  ggplot(aes(x = as.character(ano_sem), y = gini, group = 1)) +
+  ggplot(aes(x = as.character(ano_trim), y = gini, group = 1)) +
   geom_point(size = 2) +
-  geom_line(linewidth = .7) +
-  geom_text_repel(aes(label = round(gini, digits = 3)),
-                  show.legend = FALSE,
-                  size = 3) +
-  labs(title = "Evolucion del coeficiente de gini según ingresos per cápita familiar",  
-       subtitle = "Argentina urbana, 2016-2024 (semestres). Población mayor a 18 años.",
-       caption = "Fuente: elaboración propia en base a EPH-INDEC.") +
-  theme_bw() +
+  geom_line(linewidth = .5) +
+  geom_text_repel(data = . %>% filter(ano_trim == "2024-II" | ano_trim == "2016-II" |
+                                        ano_trim == "2024-I"), 
+            aes(label = round(gini, digits = 3)),
+            show.legend = FALSE,
+            size = 3,
+            nudge_y = -.002,
+            nudge_x = 1.5,
+            box.padding = .5) +
+  # labs(title = "Evolucion del coeficiente de gini según ingresos per cápita familiar",  
+  #      subtitle = "Argentina urbana, 2016-2024 (trimestres)",
+  #      caption = "Fuente: elaboración propia en base a EPH-INDEC.") +
   theme(plot.title = element_text(size = 11),
         plot.subtitle = element_text(size = 9),
         axis.title.x = element_blank(),
@@ -410,9 +443,43 @@ eph %>%
         axis.text.y = element_text(size = 9),
         axis.text.x = element_text(size = 9, angle = 45, hjust = 1),
         plot.caption = element_text(size = 9, hjust = 1),
-        strip.text = element_text(face = "bold"))
+        strip.text = element_text(face = "bold")) +
+  scale_y_continuous(limits = c(0.4, .5))
 
 ggsave("salidas/gini_evolucion.jpg", dpi = 300, width = 8, height = 5)
+```
+
+## Evolución de la desocupación
+
+```{r desocupacion, message=FALSE, warning=FALSE, echo=FALSE}
+eph %>%
+  group_by(ano_trim, ESTADO) %>%
+  tally(PONDERA) %>% 
+  group_by(ano_trim) %>%
+  summarise(desocupacion = n[ESTADO == 2] / (n[ESTADO == 1] + n[ESTADO == 2])) %>%
+  ggplot(aes(x = as.character(ano_trim), y = desocupacion, group = 1)) +
+  geom_point(size = 2) +
+  geom_line(linewidth = .7) +
+  geom_text_repel(data = . %>% filter(ano_trim == "2024-II" | ano_trim == "2016-II" |
+                                        ano_trim == "2020-II" | ano_trim == "2023-IV"), 
+            aes(label = scales::percent(desocupacion, accuracy = 0.1)),
+            show.legend = FALSE,
+            size = 3,
+            nudge_y = .015) +
+  # labs(title = "Evolucion de la tasa de desocupación",  
+  #      subtitle = "Argentina urbana, 2016-2024 (trimestres)",
+  #      caption = "Fuente: elaboración propia en base a EPH-INDEC.") +
+  theme(plot.title = element_text(size = 11),
+        plot.subtitle = element_text(size = 9),
+        axis.title.x = element_blank(),
+        axis.title.y = element_blank(),
+        axis.text.y = element_text(size = 9),
+        axis.text.x = element_text(size = 9, angle = 45, hjust = 1),
+        plot.caption = element_text(size = 9, hjust = 1),
+        strip.text = element_text(face = "bold")) +
+  scale_y_continuous(labels = scales::percent_format(accuracy = 1L), limits = c(0, .15))
+
+ggsave("salidas/desocupacion_evolucion.jpg", dpi = 300, width = 8, height = 5)
 ```
 
 
@@ -432,11 +499,15 @@ tabla_prom <- eph %>%
   summarise(porcentaje_pobreza = weighted.mean(pobreza_dic, PONDIH, na.rm = T)) 
 
 tabla %>% 
-  filter(!is.na(intensi)) %>% 
+  filter(!is.na(intensi), ano_sem != "2016-1") %>% 
   ggplot(aes(x = as.character(ano_sem), y = porcentaje_pobreza)) +
   geom_line(aes(group=intensi, color=intensi), linetype = 1, linewidth = .8, alpha = .6) +
   geom_point(aes(group=intensi, color=intensi), size = 1.8, alpha = .6) +
-  geom_line(data = tabla_prom, linetype = "dotted", linewidth = .9, color = "black", group = 1) +
+  geom_line(data = tabla_prom[tabla_prom$ano_sem != "2016-1", ], linetype = "dotted", linewidth = .9, color = "black", group = 1) +
+  geom_text_repel(data = . %>% filter(ano_sem == "2024-1" | ano_sem == "2016-2"), 
+            aes(label = scales::percent(porcentaje_pobreza, accuracy = 0.1)),
+            show.legend = FALSE,
+            size = 3) +
   theme_minimal() +
   labs(title = "Evolucion de la población bajo la línea de pobreza según intensidad laboral",  
        subtitle = "Argentina urbana, 2016-2024 (semestres). Población ocupada mayor a 18 años. \nPromedio en línea punteada.",
@@ -545,7 +616,7 @@ graf %>%
   geom_col() +
   geom_text(aes(label = scales::percent(porcentaje_pobreza, accuracy = 0.1)), 
             position = position_stack(0.6),
-            size = 3) +
+            size = 2.5) +
   scale_fill_manual(values = c("grey", "red")) +
   labs(y = "% Pobreza",
        title = "Evolución de la pobreza según clase social",  
@@ -574,6 +645,7 @@ ggsave("salidas/pobreza_clase.jpg", dpi = 300, width = 8, height = 5)
 ### Variables
 
 ```{r Nube de variables, message=FALSE, warning=FALSE, echo=FALSE}
+
 var2017 <- eph %>% 
   filter(!is.na(cobhe_f) & CH06 >= 18 & ano_sem == "2017-1" & !is.na(pobreza_dic), ESTADO == 1) %>%
   select(nivel_educativo, empleos_cant, intensi, rama, precariedad, cobhe_f, decil_ipcf, pobreza3, PONDIH)
@@ -740,5 +812,116 @@ cloud_ind_2024 <- ggadd_kellipses(cloud_ind_2024, mca2024, var2024$pobreza3, lab
 cloud_ind_2017
 cloud_ind_2023
 cloud_ind_2024
+```
+## Distancias a la CBT
+
+```{r distancias pobreza densidad, message=FALSE, warning=FALSE, echo=FALSE}
+eph %>% 
+  filter(distancia_pobreza <= 7, ano_sem != "2016-1") %>%
+  ggplot(aes(x = distancia_pobreza, frame = ano_sem, weight = PONDIH)) +
+  geom_density(alpha = .5, linewidth = .4, fill = "lightblue") +
+  geom_vline(xintercept = 1, linetype = "dashed") +
+  labs(
+    title = "Distancias del ITF a la canasta básica de pobreza",
+    subtitle = "Argentina urbana, 2016-2024 (semestres). Umbral de pobreza en línea punteada",
+    caption = "Fuente: elaboración propia en base a EPH-INDEC."
+  ) +
+  theme(axis.text.x = element_text(size = 7),
+        axis.text.y = element_text(size = 7),
+        axis.title.y = element_blank(),
+        axis.title.x = element_blank()) +
+  scale_x_continuous(breaks = seq(-1, 5, .5), limits = c(-1, 5)) +
+  facet_wrap(~ano_sem, ncol = 3)
+
+
+ggsave("salidas/distancias_pobreza_densidad.jpg", dpi = 300, width = 8, height = 5)
+
+animacion <- eph %>% 
+  filter(distancia_pobreza <= 7, ano_sem != "2016-1") %>%
+  ggplot(aes(x = distancia_pobreza, frame = ano_sem, weight = PONDIH)) +
+  geom_density(alpha = .5, linewidth = .4, fill = "lightblue") +
+  geom_vline(xintercept = 1, linetype = "dashed") +
+  labs(
+    title = "Distancias del ITF a la canasta básica de pobreza",
+    subtitle = "Argentina urbana, 2016-2024 (semestres). Umbral de pobreza en línea punteada",
+    caption = "Fuente: elaboración propia en base a EPH-INDEC."
+  ) +
+  theme(axis.text.x = element_text(size = 7),
+        axis.text.y = element_text(size = 7),
+        axis.title.y = element_blank(),
+        axis.title.x = element_blank()) +
+  scale_x_continuous(breaks = seq(-1, 5, .5), limits = c(-1, 5))
+
+ggplotly(animacion)
+
+
+```
+
+```{r distancia pobreza, message=FALSE, warning=FALSE, echo=FALSE}
+
+eph %>% 
+  filter(!is.na(distancia_pobreza3), ano_sem != "2016-1") %>% 
+  group_by(ano_sem, distancia_pobreza3) %>%
+  tally(PONDIH) %>%
+  group_by(ano_sem) %>%
+  mutate(n = n / sum(n)) %>%
+  ggplot(aes(x=ano_sem, y=n, fill=fct_rev(distancia_pobreza3))) +
+  geom_bar(stat="identity", position="fill") +
+  geom_text(aes(label = scales::percent(n, accuracy = 0.1, suffix = "")),
+            color = "white",
+            position = position_fill(vjust = 0.5), size = 2.5) +
+  labs(
+    title = "Distancias del ITF a la canasta básica de pobreza",
+    subtitle = "Argentina urbana, 2016-2024 (semestres)",
+    caption = "Fuente: elaboración propia en base a EPH-INDEC."
+  ) +
+  scale_fill_viridis_d(direction = -1, option = "inferno",
+                       end = .9) +
+  scale_y_continuous(labels = scales::percent_format(accuracy = 1L)) +
+  labs(fill = "Distancia a la CBT") +
+  theme(legend.text = element_text(size = 9),
+        axis.title.x = element_blank(),
+        axis.title.y = element_blank(),
+        axis.text.y = element_text(size = 8),
+        axis.text.x = element_text(size = 8, angle = 45, hjust = 1),
+        plot.caption = element_text(size = 9, hjust = 1),
+        panel.grid = element_line(size = .2),
+        strip.text = element_text(face = "bold"),
+        legend.background = element_blank()) 
+
+ggsave("salidas/distancias_pobreza.jpg", dpi = 300, width = 8, height = 5)
+
+
+eph %>% 
+  filter(!is.na(distancia_pobreza2), ano_sem != "2016-1", distancia_pobreza2 != "No pobre") %>% 
+  group_by(ano_sem, distancia_pobreza2) %>%
+  tally(PONDIH) %>%
+  group_by(ano_sem) %>%
+  mutate(n = n / sum(n)) %>%
+  ggplot(aes(x=ano_sem, y=n, fill=fct_rev(distancia_pobreza2))) +
+  geom_bar(stat="identity", position="fill") +
+  geom_text(aes(label = scales::percent(n, accuracy = 0.1, suffix = "")),
+            color = "white",
+            position = position_fill(vjust = 0.5), size = 2.5) +
+  labs(
+    title = "Distancias del ITF a la canasta básica de pobreza",
+    subtitle = "Argentina urbana, 2016-2024 (semestres). Solo población bajo línea de pobreza",
+    caption = "Fuente: elaboración propia en base a EPH-INDEC."
+  ) +
+  scale_fill_viridis_d(direction = -1, option = "inferno",
+                       end = .9) +
+  scale_y_continuous(labels = scales::percent_format(accuracy = 1L)) +
+  labs(fill = "Distancia a la CBT") +
+  theme(legend.text = element_text(size = 9),
+        axis.title.x = element_blank(),
+        axis.title.y = element_blank(),
+        axis.text.y = element_text(size = 8),
+        axis.text.x = element_text(size = 8, angle = 45, hjust = 1),
+        plot.caption = element_text(size = 9, hjust = 1),
+        panel.grid = element_line(size = .2),
+        strip.text = element_text(face = "bold"),
+        legend.background = element_blank()) 
+
+ggsave("salidas/distancias_pobreza2.jpg", dpi = 300, width = 8, height = 5)
 ```
 
