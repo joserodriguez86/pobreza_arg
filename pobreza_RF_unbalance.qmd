@@ -1,0 +1,624 @@
+---
+title: "Factores determinantes de la pobreza (2016-2024)"
+author: 
+  - name: "Grupo de estudios sobre desigualdad y movilidad social"
+    affiliation: "Instituto de Investagaciones Gino Germani, Facultad de Ciencias Sociales, UBA"
+date: today
+lang: es
+format: 
+  html:
+    theme: cerulean
+    toc: true
+    toc_float:
+      collapsed: false
+    grid:
+      body-width: 1000px
+  pdf:
+    toc: true
+    number-sections: true
+---
+#Preparación de la base de datos
+
+## Descarga de bases y librerías
+
+```{r Librerías y bases, message=FALSE, warning=FALSE}
+
+rm(list = ls())
+pacman::p_load(tidyverse, eph, ggsci, flextable, ggrepel, GDAtools, plotly, patchwork, tidymodels, modelsummary)
+
+eph <- get_microdata(year = 2017, type = "individual", period = c(1, 2, 3, 4))
+
+eph_h <- get_microdata(year = 2017, type = "hogar", period = c(1, 2, 3, 4))
+
+eph_h <- eph_h %>% 
+  select(-c("PONDIH", "PONDERA", "REGION", "AGLOMERADO", "MAS_500", "ITF", "IPCF", "DECIFR", "IDECIFR", "RDECIFR", "GDECIFR", "PDECIFR", "ADECIFR", "DECCFR", "IDECCFR", "RDECCFR", "GDECCFR", "PDECCFR", "ADECCFR"))
+
+eph <- eph %>% 
+  left_join(eph_h, by = c("ANO4", "TRIMESTRE", "CODUSU", "NRO_HOGAR"))
+
+canastas <- readxl::read_xlsx("fuentes/canastas_serie.xlsx")
+
+theme_set(theme_bw())
+
+rm(eph_h)
+```
+
+## Construcción de variables
+
+```{r Construcción de variables, message=FALSE, warning=FALSE}
+#Año y trimestre
+eph <- eph %>% 
+  mutate(semestre = case_when(TRIMESTRE <= 2 ~ 1,
+                              TRIMESTRE > 2 ~ 2),
+         trim = case_when(TRIMESTRE == 1 ~ "I",
+                          TRIMESTRE == 2 ~ "II",
+                          TRIMESTRE == 3 ~ "III",
+                          TRIMESTRE == 4 ~ "IV"),
+         ano2 = str_sub(as.character(ANO4), 3, 4))
+
+eph$ano_trim <- paste(as.character(eph$ANO4), as.character(eph$trim), sep = "-")
+eph$ano_sem <- paste(as.character(eph$ANO4), as.character(eph$semestre), sep = "-")
+
+#Pobreza----------------------------------
+eph <- calculate_poverty(base = eph, basket = canastas, print_summary = FALSE,
+                         window = "semester")
+
+
+
+eph <- eph %>% 
+  mutate(pobreza_dic = factor(case_when(situacion %in% c("pobre", "indigente") ~ "Pobre",
+                                 situacion %in% "no_pobre" ~ "No pobre"),
+                              levels = c("Pobre", "No pobre")))
+
+
+#Sociodemográficas------------------------
+eph <- eph %>% 
+  mutate(NIVEL_ED = ifelse(NIVEL_ED > 6, 0, NIVEL_ED))
+
+eph <- eph %>% 
+  mutate(sexo_f = factor(CH04, labels = c("Varón", "Mujer")),
+         salud_f = factor(case_when(CH08 <= 2 | CH08 > 9 ~ "Tiene",
+                                    TRUE ~ "No tiene")),
+         migrante_f = factor(case_when(CH15 >= 1 & CH15 <= 3 ~ "Nativo",
+                               CH15 == 4 ~ "Migrante lim",
+                               CH15 == 5 ~ "Migrante no lim",
+                               CH15 == 9 ~ "Nativo")),
+         edad = CH06)
+
+
+eph <- eph %>% 
+  group_by(ano_trim, CODUSU, NRO_HOGAR) %>%
+  mutate(clima_educ = max(NIVEL_ED),
+         cant_menores = sum(CH06 <= 18),
+         ocupados = sum(ESTADO == 1) / IX_TOT) %>%
+  mutate(clima_educ = factor(case_when(clima_educ <= 2 ~ "Primario completo",
+                                       clima_educ >= 3 & clima_educ <= 4 ~ "Secundario completo",
+                                       clima_educ >= 5 ~ "Terciario/universitario completo"),
+                             levels = c("Primario completo",
+                                        "Secundario completo",
+                                        "Terciario/universitario completo"))) %>% 
+  ungroup()
+
+
+#Laborales-------------------------------
+eph <- organize_caes(base = eph)
+
+eph$cno <- ifelse(is.na(eph$PP04D_COD), eph$PP11D_COD, eph$PP04D_COD)
+
+eph$cno12 <- ifelse(nchar(eph$cno) > 4, str_sub(eph$cno, 1, 2), str_sub(eph$cno, 1, 1))
+eph$cno3 <- ifelse(nchar(eph$cno) > 4, str_sub(eph$cno, 3, 3), str_sub(eph$cno, 2, 2))
+eph$cno4 <- ifelse(nchar(eph$cno) > 4, str_sub(eph$cno, 4, 4), str_sub(eph$cno, 3, 3))
+eph$cno5 <- ifelse(nchar(eph$cno) > 4, str_sub(eph$cno, 5, 5), str_sub(eph$cno, 4, 4))
+
+eph$cno12 <- as.numeric(eph$cno12)
+eph$cno3 <- as.numeric(eph$cno3)
+eph$cno4 <- as.numeric(eph$cno4)
+eph$cno5 <- as.numeric(eph$cno5)
+
+
+eph <- eph %>% 
+  mutate(tamano = case_when((PP04C > 0 & PP04C <= 5) | (PP04C == 99 & PP04C99 == 1) ~ 1,
+                            (PP04C > 5 & PP04C < 99) | (PP04C == 99 & (PP04C99 == 2 | PP04C99 == 3)) ~ 2,
+                            ((PP04C == 0 & PP04C99 == 0) | (PP04C == 99 & PP04C99 == 9)) & PP04A == 1 ~ 2,
+                            PP04A == 1 ~ 2,
+                            TRUE ~ NA_real_)) 
+
+eph <- eph %>% 
+  mutate(empleos_cant = factor(case_when(PP03C == 1 ~ "Un empleo",
+                                         PP03C == 2 ~ "Más de un empleo",
+                                         TRUE ~ NA_character_)),
+         intensi = factor(case_when(INTENSI == 1 ~ "Subocupado",
+                                    INTENSI == 2 ~ "Ocupado pleno",
+                                    INTENSI == 3 ~ "Sobreocupado",
+                                    TRUE ~ NA_character_)),
+         rama = substr(caes_eph_label, start = 1, stop = 28),
+         rama = factor(rama),
+         precariedad = factor(case_when(CAT_OCUP == 3 & (PP07H == 1 | PP07I == 1) ~ "No precario",
+                                 CAT_OCUP == 3 & PP07H != 1 & PP07I != 1 ~ "Precario",
+                                 CAT_OCUP == 2 & cno5 <= 2 ~ "No precario",
+                                 CAT_OCUP == 2 & cno5 > 2 ~ "Precario",
+                                 CAT_OCUP == 1 & tamano == 2 ~ "No precario",
+                                 CAT_OCUP == 1 & tamano != 2 & caes_division_cod %in% c(62, 63, 85) ~ "No precario",
+                                 CAT_OCUP == 1 & tamano != 2 & !caes_division_cod %in% c(62, 63, 85) ~ "Precario",
+                                 CAT_OCUP == 4 | CAT_OCUP == 9 ~ "Precario",
+                                 TRUE ~ NA_character_)),
+         categoria = case_when(CAT_OCUP == 1 & cno3 == 0 ~ 1,
+                               CAT_OCUP == 2 | cno3 == 1 ~ 2,
+                               (CAT_OCUP == 3 | CAT_OCUP == 4) | (cno3 == 2 | cno3 == 3) ~ 3,
+                               (CAT_OCUP == 3 | CAT_OCUP == 4) & (cno3 == 0) ~ 3,
+                               CAT_OCUP == 1 & cno3 > 1 ~ 1,
+                               CAT_OCUP == 9 & cno3 == 0 ~ 1,
+                               CAT_OCUP == 9 & cno3 > 1 ~ 3,
+                               cno3 == 9 & CAT_OCUP > 2 ~ 3),
+         condicion = factor(case_when(ESTADO == 1 ~ "Ocupado",
+                                      ESTADO == 2 ~ "Desocupado",
+                                      (ESTADO == 3 | ESTADO == 4) & CAT_INAC == 1 ~ "Inactivo jubilado",
+                                      (ESTADO == 3 | ESTADO == 4) & CAT_INAC > 1 ~ "Inactivo otro",
+                                      TRUE ~ NA_character_)))
+
+
+#Clase social----------------
+
+eph <- eph %>% 
+  mutate(cobhe = case_when(#Clase I: propietarios > 5 y directivos, gerentes, funcionarios de dirección
+    cno12 >= 0 & cno12 <= 4 ~ 1, 
+    cno12 == 6 | cno12 == 7 ~ 1,
+    
+    #Clase II: propietarios < 5 y directivos, gerentes, funcionarios de dirección  
+    cno12 == 5 ~ 2,
+    
+    #Clase III: cuenta propias profesionales/calificados
+    (cno12 == 32 | cno12 == 35 | cno12 == 51 | cno12 == 52 | cno12 == 53 |
+       cno12 == 54 | cno12 == 57 | cno12 == 58 | cno12 == 60 |
+       cno12 == 61 | cno12 == 62 | cno12 == 63 | cno12 == 64 |
+       cno12 == 65 | cno12 == 70 | cno12 == 71 | cno12 == 72 |
+       cno12 == 80 | cno12 == 82) & categoria == 2 & cno5 < 3 ~ 3,
+    
+    (cno12 == 10 | cno12 == 11 | cno12 == 20 | cno12 == 30 | cno12 == 31 | cno12 == 40 |
+       cno12 == 41 | cno12 == 42 | cno12 == 43 | cno12 == 44 | cno12 == 45 |
+       cno12 == 46 | cno12 == 47 | cno12 == 50 | cno12 == 81 | cno12 == 90 | 
+       cno12 == 91 | cno12 == 92) & categoria == 2 & cno5 <= 3 ~ 3,
+    
+    cno12 == 34 & categoria == 2 & cno5 <= 2 ~ 3,
+    cno12 == 34 & categoria == 2 & cno5 > 2 & cno4 > 1 ~ 3,
+    cno12 == 35 & categoria == 2 & cno5 > 2 & cno4 > 1 ~ 3,
+    
+    #Clase IV: trabajadores no manuales > 5
+    (cno12 >= 10 & cno12 <= 20) & categoria == 3 & tamano == 2 ~ 4,
+    cno12 == 30 & categoria == 3 & tamano == 2 ~ 4,
+    (cno12 == 31 | cno12 == 32) & categoria == 3 & tamano == 2 & cno5 <= 3 ~ 4,
+    cno12 == 35 & categoria == 3 & tamano == 2 & cno5 <= 3 ~ 4,
+    cno12 == 36 & categoria == 3 & tamano == 2 & cno5 <= 2 ~ 4,
+    (cno12 >= 40 & cno12 <= 43) & categoria == 3 & tamano == 2 ~ 4,
+    cno12 == 44 & categoria == 3 & tamano == 2 & cno5 <= 2 ~ 4,
+    (cno12 == 45 | cno12 == 46) & categoria == 3 & tamano == 2 ~ 4,
+    (cno12 >= 47 & cno12 <= 49) & categoria == 3 & tamano == 2 & cno5 <= 2 ~ 4,
+    (cno12 == 50 | cno12 == 52) & categoria == 3 & tamano == 2 ~ 4,
+    cno12 == 54 & categoria == 3 & tamano == 2 & cno5 <= 3 ~ 4,
+    cno12 == 58 & categoria == 3 & tamano == 2 & cno5 <= 2 ~ 4,
+    (cno12 >= 60 & cno12 <= 63) & categoria == 3 & tamano == 2 & cno5 <= 2 & cno4 != 2 ~ 4,
+    (cno12 >= 70 & cno12 <= 72) & categoria == 3 & tamano == 2 & cno5 <= 2 & cno4 != 2 ~ 4,
+    cno12 == 80 & categoria == 3 & tamano == 2 & cno5 <= 2 & cno4 != 2 ~ 4,
+    cno12 == 81 & categoria == 3 & tamano == 2 ~ 4,
+    cno12 == 91 & categoria == 3 & tamano == 2 ~ 4,
+    cno12 == 92 & categoria == 3 & tamano == 2 & cno5 == 1 ~ 4,
+    
+    #Clase V: trabajadores manuales > 5
+    (cno12 == 31 | cno12 == 32) & categoria == 3 & tamano == 2 & cno5 == 4 ~ 5,
+    cno12 == 34 & categoria == 3 & tamano == 2 ~ 5,
+    cno12 == 35 & categoria == 3 & tamano == 2 & cno5 == 4 ~ 5,
+    cno12 == 36 & categoria == 3 & tamano == 2 & cno5 > 2 ~ 5,
+    cno12 == 44 & categoria == 3 & tamano == 2 & cno5 > 2 ~ 5,
+    (cno12 >= 47 & cno12 <= 49) & categoria == 3 & tamano == 2 & cno5 > 2 ~ 5,
+    cno12 == 51 & categoria == 3 & tamano == 2 ~ 5,
+    cno12 == 53 & categoria == 3 & tamano == 2 ~ 5,
+    cno12 == 54 & categoria == 3 & tamano == 2 & cno5 == 4 ~ 5,
+    (cno12 == 56 | cno12 == 57)  & categoria == 3 & tamano == 2 ~ 5,
+    cno12 == 58 & categoria == 3 & tamano == 2 & cno5 > 2 ~ 5,
+    (cno12 >= 60 & cno12 <= 63) & categoria == 3 & tamano == 2 & cno5 <= 2 & cno4 == 2 ~ 5,
+    (cno12 >= 60 & cno12 <= 63) & categoria == 3 & tamano == 2 & cno5 > 2 ~ 5,
+    (cno12 == 64 | cno12 == 65)  & categoria == 3 & tamano == 2 ~ 5,
+    (cno12 >= 70 & cno12 <= 72) & categoria == 3 & tamano == 2 & cno5 <= 2 & cno4 == 2 ~ 5,
+    (cno12 >= 70 & cno12 <= 72) & categoria == 3 & tamano == 2 & cno5 > 2 ~ 5,
+    cno12 == 80 & categoria == 3 & tamano == 2 & cno5 <= 2 & cno4 == 2 ~ 5,
+    cno12 == 80 & categoria == 3 & tamano == 2 & cno5 > 2 ~ 5,
+    (cno12 == 82 | cno12 == 90) & categoria == 3 & tamano == 2  ~ 5,
+    cno12 == 92 & categoria == 3 & tamano == 2 & cno5 > 1 ~ 5,
+    
+    #Clase VI: trabajadores no manuales < 5
+    (cno12 >= 10 & cno12 <= 20) & categoria == 3 & tamano == 1 ~ 6,
+    cno12 == 30 & categoria == 3 & tamano == 1 ~ 6,
+    (cno12 == 31 | cno12 == 32) & categoria == 3 & tamano == 1 & cno5 <= 3 ~ 6,
+    cno12 == 35 & categoria == 3 & tamano == 1 & cno5 <= 3 ~ 6,
+    cno12 == 36 & categoria == 3 & tamano == 1 & cno5 <= 2 ~ 6,
+    (cno12 >= 40 & cno12 <= 43) & categoria == 3 & tamano == 1 ~ 6,
+    cno12 == 44 & categoria == 3 & tamano == 1 & cno5 <= 2 ~ 6,
+    (cno12 == 45 | cno12 == 46) & categoria == 3 & tamano == 1 ~ 6,
+    (cno12 >= 47 & cno12 <= 49) & categoria == 3 & tamano == 1 & cno5 <= 2 ~ 6,
+    (cno12 == 50 | cno12 == 52) & categoria == 3 & tamano == 1 ~ 6,
+    cno12 == 54 & categoria == 3 & tamano == 1 & cno5 <= 3 ~ 6,
+    cno12 == 58 & categoria == 3 & tamano == 1 & cno5 <= 2 ~ 6,
+    (cno12 >= 60 & cno12 <= 63) & categoria == 3 & tamano == 1 & cno5 <= 2 & cno4 != 2 ~ 6,
+    (cno12 >= 70 & cno12 <= 72) & categoria == 3 & tamano == 1 & cno5 <= 2 & cno4 != 2 ~ 6,
+    cno12 == 80 & categoria == 3 & tamano == 1 & cno5 <= 2 & cno4 != 2 ~ 6,
+    cno12 == 81 & categoria == 3 & tamano == 1 ~ 6,
+    cno12 == 91 & categoria == 3 & tamano == 1 ~ 6,
+    cno12 == 92 & categoria == 3 & tamano == 1 & cno5 == 1 ~ 6,
+    
+    #Clase VII: trabajadores manuales < 5
+    (cno12 == 31 | cno12 == 32) & categoria == 3 & tamano == 1 & cno5 == 4 ~ 7,
+    cno12 == 34 & categoria == 3 & tamano == 1 ~ 7,
+    cno12 == 35 & categoria == 3 & tamano == 1 & cno5 == 4 ~ 7,
+    cno12 == 36 & categoria == 3 & tamano == 1 & cno5 > 2 ~ 7,
+    cno12 == 44 & categoria == 3 & tamano == 1 & cno5 > 2 ~ 7,
+    (cno12 >= 47 & cno12 <= 49) & categoria == 3 & tamano == 1 & cno5 > 2 ~ 7,
+    cno12 == 51 & categoria == 3 & tamano == 1 ~ 7,
+    cno12 == 53 & categoria == 3 & tamano == 1 ~ 7,
+    cno12 == 54 & categoria == 3 & tamano == 1 & cno5 == 4 ~ 7,
+    (cno12 == 56 | cno12 == 57)  & categoria == 3 & tamano == 1 ~ 7,
+    cno12 == 58 & categoria == 3 & tamano == 1 & cno5 > 2 ~ 7,
+    (cno12 >= 60 & cno12 <= 63) & categoria == 3 & tamano == 1 & cno5 <= 2 & cno4 == 2 ~ 7,
+    (cno12 >= 60 & cno12 <= 63) & categoria == 3 & tamano == 1 & cno5 > 2 ~ 7,
+    (cno12 == 64 | cno12 == 65)  & categoria == 3 & tamano == 1 ~ 7,
+    (cno12 >= 70 & cno12 <= 72) & categoria == 3 & tamano == 1 & cno5 <= 2 & cno4 == 2 ~ 7,
+    (cno12 >= 70 & cno12 <= 72) & categoria == 3 & tamano == 1 & cno5 > 2 ~ 7,
+    cno12 == 80 & categoria == 3 & tamano == 1 & cno5 <= 2 & cno4 == 2 ~ 7,
+    cno12 == 80 & categoria == 3 & tamano == 1 & cno5 > 2 ~ 7,
+    (cno12 == 82 | cno12 == 90) & categoria == 3 & tamano == 1  ~ 7,
+    cno12 == 92 & categoria == 3 & tamano == 1 & cno5 > 1 ~ 7,
+    cno12 == 55 ~ 7,
+    is.na(tamano) & PP04B1 == 1 ~ 7,
+    
+    #Clase VIII: Cuenta propia semi-calificados y no calificados
+    (cno12 == 10 | cno12 == 32 | cno12 == 51 | cno12 == 52 | cno12 == 53 |
+       cno12 == 54 | cno12 == 57 | cno12 == 58 | cno12 == 60 |
+       cno12 == 61 | cno12 == 62 | cno12 == 63 | cno12 == 64 |
+       cno12 == 65 | cno12 == 70 | cno12 == 71 | cno12 == 72 |
+       cno12 == 80 | cno12 == 82) & categoria == 2 & (cno5 == 3 | cno5 == 4) ~ 8,
+    
+    (cno12 == 11 | cno12 == 20 | cno12 == 30 | cno12 == 31 | cno12 == 40 |
+       cno12 == 41 | cno12 == 42 | cno12 == 43 | cno12 == 44 | cno12 == 45 |
+       cno12 == 46 | cno12 == 47 | cno12 == 50 | cno12 == 81 | cno12 == 90 | 
+       cno12 == 91 | cno12 == 92) & categoria == 2 & (cno5 == 4) ~ 8,
+    
+    cno12 == 34 & categoria == 2 & cno5 > 2 & cno4 == 1 ~ 8,
+    cno12 == 35 & categoria == 2 & cno5 > 2 & cno4 == 1 ~ 8,
+    cno12 == 36 & categoria == 2 ~ 8,
+    cno12 == 56 & categoria == 2 ~ 8,
+    cno12 == 33 ~ 8,
+    categoria == 2 & cno5 == 4 ~ 8,
+    
+    TRUE ~ NA_real_))
+
+eph$cobhe_f <- factor(eph$cobhe, 
+                      labels = c('Propietarios y directivos >5',
+                                 'Propietarios y directivos <=5',
+                                 'Cuenta propia profesionales / calificados',
+                                 'Trabajadores no manuales >5',
+                                 'Trabajadores manuales >5',
+                                 'Trabajadores no manuales <=5',
+                                 'Trabajadores manuales <=5',
+                                 'Cuenta propia no calificados'))
+
+
+
+```
+
+
+## Selección de variables para modelar y sets de entrenamiento y testeo
+
+Se va a utilizar el primer trimestre de 2017 para entrenar el modelo y el segundo trimestre de 2017 para testearlo.
+
+```{r Selección de variables para modelar, message=FALSE, warning=FALSE}
+#Me quedo con hogares con jefe de hogar ocupado
+eph_mod <- eph %>% 
+  filter(CH03 == 1, ESTADO == 1)
+
+#Selecciono variables para modelar
+eph_mod <- eph_mod %>% 
+  select(ano_trim, CODUSU, NRO_HOGAR, sexo_f, edad, salud_f, migrante_f, 
+         clima_educ, cant_menores, ocupados, 
+         cobhe_f, pobreza_dic, empleos_cant, 
+         intensi, rama, precariedad)
+
+train_201712 <- eph_mod %>% 
+  filter(ano_trim == "2017-I" | ano_trim == "2017-II")
+
+# test_20172 <- eph_mod %>%
+#   filter(ano_trim == "2017-II")
+
+test_20173 <- eph_mod %>%
+  filter(ano_trim == "2017-III")
+
+test_20174 <- eph_mod %>%
+  filter(ano_trim == "2017-IV")
+
+
+```
+
+
+# Modelado
+
+## Regresión logística
+
+
+```{r Regresión logística, message=FALSE, warning=FALSE}
+
+#Preprocesamiento
+recetas1 <- recipe(pobreza_dic ~ ., data = train_201712) %>%
+  update_role(ano_trim, CODUSU, NRO_HOGAR, new_role = "ID") %>%
+  step_other(rama, threshold = 0.10, other = "Otro") %>%
+  step_relevel(pobreza_dic, ref_level = "No pobre") %>% 
+  step_rm(ocupados, cobhe_f, empleos_cant, intensi, rama, precariedad) %>% 
+  step_naomit(pobreza_dic) %>%
+  themis::step_downsample(pobreza_dic, under_ratio = 1)
+
+recetas2 <- recipe(pobreza_dic ~ ., data = train_201712) %>%
+  update_role(ano_trim, CODUSU, NRO_HOGAR, new_role = "ID") %>%
+  step_other(rama, threshold = 0.10, other = "Otro") %>%
+  step_relevel(pobreza_dic, ref_level = "No pobre") %>% 
+  step_relevel(cobhe_f, ref_level = "Cuenta propia no calificados") %>%
+  step_relevel(intensi, ref_level = "Subocupado") %>%
+  # step_relevel(rama, ref_level = "Servicio domestico") %>%
+  step_impute_knn(cobhe_f, empleos_cant, intensi, precariedad, neighbors = 5) 
+# %>%
+#   # step_rm(rama) %>% 
+#   step_naomit(pobreza_dic) %>%
+#   themis::step_downsample(pobreza_dic, under_ratio = 1)
+
+#Especificación del modelo
+log_reg_spec <- logistic_reg() %>%
+  set_mode("classification") %>%
+  set_engine("glm")
+
+#Workflow y ajuste
+wf1 <- workflow() %>%
+  add_recipe(recetas1) %>%
+  add_model(log_reg_spec)
+
+log_reg1 <- wf1 %>%
+  fit(data = train_201712)
+
+wf2 <- workflow() %>%
+  add_recipe(recetas2) %>%
+  add_model(log_reg_spec)
+
+log_reg2 <- wf2 %>%
+  fit(data = train_201712)
+
+modelsummary(list(log_reg1, log_reg2), exponentiate = TRUE,
+             stars = c(`***` = 0.01, `**` = 0.05, `*` = 0.1))
+
+
+```
+
+
+## Random Forest
+
+```{r Random Forest, message=FALSE, warning=FALSE}
+set.seed(9928)
+
+#Preprocesamiento
+recetas <- recipe(pobreza_dic ~ ., data = train_20171) %>%
+  update_role(ano_trim, CODUSU, NRO_HOGAR, new_role = "ID") %>%
+  step_other(rama, threshold = 0.02, other = "Otro") %>% 
+  step_naomit(pobreza_dic) %>% 
+  themis::step_downsample(pobreza_dic, under_ratio = 1)
+
+#Workflow
+wf <- workflow() %>%
+  add_recipe(recetas) 
+
+#Hiperparámetros y especificación del modelo
+rf_spec <- rand_forest(
+  trees = 400,
+  mtry = tune(),
+  min_n = tune()
+  ) %>%
+  set_mode("classification") %>%
+  set_engine("ranger", num.threads = 4, importance = 'permutation')
+
+tune_wf <- wf %>%
+  add_model(rf_spec)
+
+#Validación cruzada
+set.seed(28872)
+
+folds <- vfold_cv(train_20171, v = 5)
+
+#Tuning
+tune_params <- tune_grid(tune_wf,
+                         resamples = folds,
+                         grid = 20,
+                         metrics = metric_set(precision, recall,
+                                              roc_auc, f_meas))
+
+#Revisión de parametros
+autoplot(tune_params)+
+  theme_minimal()
+
+#Selección de parámetros
+show_best(tune_params, metric = "roc_auc")
+
+best_ROC <- select_best(tune_params, metric = "roc_auc")
+
+final_rf <- finalize_model(
+  rf_spec,
+  best_ROC
+)
+
+final_rf
+
+
+#Incorporación al workflow
+tree_rf <- wf %>%
+  add_model(final_rf) %>% 
+  fit(train_20171)
+
+extract_fit_parsnip(tree_rf) %>%
+  vip::vip(geom = "col") + 
+  labs(title = "Variables importantes del modelo",
+       caption = "Fuente: elaboración propia en base a EPH 2017 (1er  trimestre)",
+       y = "Importancia")
+
+
+
+```
+# Comparando modelos
+
+```{r Evaluación regresión logística, message=FALSE, warning=FALSE}
+
+# El F1 no mejora demasiado si cambio el cutoff. Se sacrifica precisión por recall y accuracy. Para tener más precisión hay que agregar ingresos, pero el modelo ahí se torna medio recursivo.
+
+# Usar las clases desbalanceadas mejora la presición pero pierde recall.
+
+#Predicciones
+train_201712 <- augment(log_reg2, new_data = train_201712) %>% 
+  select(-starts_with(".pred"), everything(), starts_with(".pred")) %>%
+  mutate(.pred_class = fct_relevel(.pred_class, "Pobre", "No pobre"))
+
+# test_20172 <- augment(log_reg2, new_data = test_20172) %>% 
+#   select(-starts_with(".pred"), everything(), starts_with(".pred")) %>%
+#   mutate(.pred_class = fct_relevel(.pred_class, "Pobre", "No pobre"))
+
+test_20173 <- augment(log_reg2, new_data = test_20173) %>% 
+  select(-starts_with(".pred"), everything(), starts_with(".pred")) %>%
+  mutate(.pred_class = fct_relevel(.pred_class, "Pobre", "No pobre"))
+
+test_20174 <- augment(log_reg2, new_data = test_20174) %>% 
+  select(-starts_with(".pred"), everything(), starts_with(".pred")) %>%
+  mutate(.pred_class = fct_relevel(.pred_class, "Pobre", "No pobre"))
+
+class_metrics <- metric_set(precision, recall,
+                       accuracy, f_meas)
+
+metrica_201712_log <- train_201712 %>%
+  class_metrics(truth = pobreza_dic, estimate = .pred_class) %>% 
+  bind_rows(roc_auc(predicciones, truth = pobreza_dic, ".pred_Pobre")) %>%
+  add_column(base = "Train 2017-1", .before = ".metric") %>% 
+  add_column(modelo = "Logística", .before = "base")
+
+# metrica_20172_log <- test_20172 %>%
+#   class_metrics(truth = pobreza_dic, estimate = .pred_class) %>% 
+#   bind_rows(roc_auc(test_20172, truth = pobreza_dic, ".pred_Pobre")) %>%
+#   add_column(base = "Test 2017-2", .before = ".metric") %>% 
+#   add_column(modelo = "Logística", .before = "base")
+
+metrica_20173_log <- test_20173 %>%
+  class_metrics(truth = pobreza_dic, estimate = .pred_class) %>% 
+  bind_rows(roc_auc(test_20173, truth = pobreza_dic, ".pred_Pobre")) %>%
+  add_column(base = "Test 2017-3", .before = ".metric") %>% 
+  add_column(modelo = "Logística", .before = "base")
+
+metrica_20174_log <- test_20174 %>%
+  class_metrics(truth = pobreza_dic, estimate = .pred_class) %>% 
+  bind_rows(roc_auc(test_20174, truth = pobreza_dic, ".pred_Pobre")) %>%
+  add_column(base = "Test 2017-4", .before = ".metric") %>% 
+  add_column(modelo = "Logística", .before = "base")
+
+metricas <- metrica_201712_log %>% 
+  # add_row(metrica_20172_log) %>%
+  add_row(metrica_20173_log) %>%
+  add_row(metrica_20174_log) %>%
+  pivot_wider(names_from = ".metric", values_from = ".estimate")
+
+metricas
+
+conf_mat(train_201712, truth = pobreza_dic, estimate = .pred_class) %>%
+  autoplot(type = "heatmap") +
+  labs(title = "Matriz de confusión en Train 2017-1",
+       caption = "Fuente: elaboración propia en base a EPH 2017 (1er  trimestre)")
+
+
+
+```
+
+```{r Evaluación Random Forest, message=FALSE, warning=FALSE}
+
+train_20171 <- augment(tree_rf, new_data = train_20171) %>% 
+  select(-starts_with(".pred"), everything(), starts_with(".pred"))
+
+test_20172 <- augment(tree_rf, new_data = test_20172) %>% 
+  select(-starts_with(".pred"), everything(), starts_with(".pred"))
+
+test_20173 <- augment(tree_rf, new_data = test_20173) %>%
+  select(-starts_with(".pred"), everything(), starts_with(".pred"))
+
+test_20174 <- augment(tree_rf, new_data = test_20174) %>%
+  select(-starts_with(".pred"), everything(), starts_with(".pred"))
+
+
+
+#Métricas
+class_metrics <- metric_set(precision, recall,
+                       accuracy, f_meas)
+
+metrica_test_rf_20172 <- test_20172 %>%
+  # filter(!is.na(pobreza_dic)) %>% 
+  class_metrics(truth = pobreza_dic, estimate = .pred_class) %>% 
+  bind_rows(roc_auc(test_20172, truth = pobreza_dic, ".pred_Pobre")) %>%
+  add_column(base = "Test 2017-2", .before = ".metric") %>% 
+  add_column(modelo = "Random forest", .before = "base")
+
+metrica_train_rf_20171 <- train_20171 %>% 
+  # filter(!is.na(pobreza_dic)) %>% 
+  class_metrics(truth = pobreza_dic, estimate = .pred_class) %>% 
+  bind_rows(roc_auc(train_20171, truth = pobreza_dic, ".pred_Pobre")) %>%
+  add_column(base = "Train 2017-1", .before = ".metric") %>% 
+  add_column(modelo = "Random forest", .before = "base")
+
+metrica_test_rf_20173 <- test_20173 %>%
+  # filter(!is.na(pobreza_dic)) %>% 
+  class_metrics(truth = pobreza_dic, estimate = .pred_class) %>% 
+  bind_rows(roc_auc(test_20173, truth = pobreza_dic, ".pred_Pobre")) %>%
+  add_column(base = "Test 2017-3", .before = ".metric") %>% 
+  add_column(modelo = "Random forest", .before = "base")
+
+metrica_test_rf_20174 <- test_20174 %>% 
+  # filter(!is.na(pobreza_dic)) %>% 
+  class_metrics(truth = pobreza_dic, estimate = .pred_class) %>% 
+  bind_rows(roc_auc(test_20174, truth = pobreza_dic, ".pred_Pobre")) %>%
+  add_column(base = "Test 2017-4", .before = ".metric") %>% 
+  add_column(modelo = "Random forest", .before = "base")
+
+
+metricas <- metrica_train_rf_20171 %>% 
+  add_row(metrica_test_rf_20172) %>%
+  add_row(metrica_test_rf_20173) %>%
+  add_row(metrica_test_rf_20174) %>%
+  pivot_wider(names_from = ".metric", values_from = ".estimate")
+
+metricas
+
+conf_mat(test_20172, truth = pobreza_dic, estimate = .pred_class) %>%
+  autoplot(type = "heatmap") +
+  labs(title = "Matriz de confusión en Train 2017-1",
+       caption = "Fuente: elaboración propia en base a EPH 2017 (1er  trimestre)")
+```
+
+
+
+
+```{r Gráficos, message=FALSE, warning=FALSE}
+roc_data <- roc_curve(test_20174, truth = pobreza_dic, ".pred_Pobre")
+
+optimal_threshold <- roc_data %>%
+  mutate(sum_sens_spec = sensitivity + specificity) %>%
+  filter(sum_sens_spec == max(sum_sens_spec)) %>%
+  pull(.threshold)
+
+print(optimal_threshold) # Muestra el umbral óptimo
+
+ggplot(roc_data, aes(x = 1 - specificity, y = sensitivity)) +
+  geom_line(color = "blue", size = 1) +
+  geom_abline(linetype = "dashed", color = "gray") + # Línea de referencia
+  geom_point(data = filter(roc_data, .threshold == optimal_threshold),
+             aes(x = 1 - specificity, y = sensitivity),
+             color = "red", size = 3) +
+  labs(title = "Curva ROC con Umbral Óptimo",
+       x = "1 - Especificidad (FPR)",
+       y = "Sensibilidad (TPR)") +
+  theme_minimal()
+
+```
+

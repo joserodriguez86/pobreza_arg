@@ -931,7 +931,7 @@ identify_outliers <- function(data) {
 }
 
 eph_clean <- eph %>%
-  filter(ESTADO == 1, CH06 >= 18, ANO4 >= 2017, !is.na(cobhe_f)) %>% 
+  filter(CH06 >= 18, ANO4 >= 2017, !is.na(cobhe_f)) %>% 
   group_by(ANO4) %>%
   mutate(is_outlier = identify_outliers(ipcf2024)) %>%
   ungroup() %>%
@@ -939,21 +939,21 @@ eph_clean <- eph %>%
   select(-is_outlier)
 
 tabla <- eph_clean %>% 
-  filter(ESTADO == 1, CH06 >= 18, ANO4 >= 2017, !is.na(cobhe_f)) %>%
-  group_by(ano_sem, cobhe_f) %>% 
+  filter(CH06 >= 18, ANO4 >= 2017, !is.na(cobhe_f)) %>%
+  group_by(ano_trim, cobhe_f) %>% 
   summarise(ingresos= weighted.mean(ipcf2024, PONDIH, na.rm = T))
 
 tabla_prom <- eph_clean %>%
-  filter(ESTADO == 1, CH06 >= 18, ANO4 >= 2017, !is.na(cobhe_f)) %>%
-  group_by(ano_sem) %>%
+  filter(CH06 >= 18, ANO4 >= 2017, !is.na(cobhe_f)) %>%
+  group_by(ano_trim) %>%
   summarise(ingresos = weighted.mean(ipcf2024, PONDIH, na.rm = T))
 
 
 tabla %>% 
-  ggplot(aes(x = as.character(ano_sem), y = ingresos)) +
+  ggplot(aes(x = as.character(ano_trim), y = ingresos)) +
   geom_line(aes(group=cobhe_f, color=cobhe_f), linetype = 1, linewidth = .8, alpha = .6) +
-  geom_point(aes(group=cobhe_f, color=cobhe_f), size = 1.8, alpha = .6) +
-  geom_line(data = tabla_prom, linetype = "dotted", linewidth = .9, color = "black", group = 1) +
+  geom_point(aes(group=cobhe_f, color=cobhe_f), size = 1.5, alpha = .6) +
+  geom_line(data = tabla_prom, linetype = "dotted", linewidth = .8, color = "black", group = 1) +
   theme(plot.title = element_text(size = 11),
         plot.subtitle = element_text(size = 9),
         legend.title = element_blank(),
