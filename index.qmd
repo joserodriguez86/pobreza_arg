@@ -21,11 +21,11 @@ format:
 ```{r Librerías y bases, message=FALSE, warning=FALSE, echo=FALSE}
 
 rm(list = ls())
-pacman::p_load(tidyverse, eph, ggsci, flextable, ggrepel, GDAtools, plotly, patchwork)
+pacman::p_load(tidyverse, eph, ggsci, flextable, ggrepel, GDAtools, plotly, patchwork, spatstat)
 
 eph <- get_microdata(2016:2024, type = "individual", period = c(1:4))
 
-canastas <- readxl::read_xlsx("fuentes/canastas_serie.xlsx")
+canastas <- readxl::read_xlsx("fuentes/canastas_serie_lalo.xlsx")
 
 ipc <- readxl::read_xlsx("fuentes/ipc_trimestral_2024.xlsx")
 
@@ -425,6 +425,51 @@ eph %>%
 ggsave("salidas/pobreza_evolucion_trimestres.png", dpi = 300, width = 8, height = 5)
 
 ```
+
+```{r Pobreza relativa, message=FALSE, warning=FALSE, echo=FALSE}
+
+mediana_ingresos <- eph %>%
+  filter(CH03 == 1) %>% 
+  group_by(ano_sem) %>% 
+  summarise(mediana = weighted.median(ipcf2, PONDIH, na.rm = T))
+
+eph <- eph %>% 
+  left_join(mediana_ingresos, by = "ano_sem")
+
+eph <- eph %>% 
+  mutate(umbral40 = mediana * .4,
+         umbral50 = mediana * .5,
+         umbral60 = mediana * .6) %>%
+  mutate(pobreza_relativa40 = ifelse(ipcf2 < umbral40, 1, 0),
+         pobreza_relativa50 = ifelse(ipcf2 < umbral50, 1, 0),
+         pobreza_relativa60 = ifelse(ipcf2 < umbral60, 1, 0))
+  
+eph %>%
+  group_by(ano_sem) %>% 
+  summarise(porcentaje_pobreza_relativa60 = weighted.mean(pobreza_relativa60, PONDIH, na.rm = T),
+            porcentaje_pobreza_relativa50 = weighted.mean(pobreza_relativa50, PONDIH, na.rm = T),
+            porcentaje_pobreza_relativa40 = weighted.mean(pobreza_relativa40, PONDIH, na.rm = T)) %>% 
+  pivot_longer(cols = c(porcentaje_pobreza_relativa40, porcentaje_pobreza_relativa50, porcentaje_pobreza_relativa60), names_to = "umbral", values_to = "porcentaje_pobreza_relativa") %>% 
+  ggplot(aes(x = as.character(ano_sem), y = porcentaje_pobreza_relativa, fill = umbral, color = umbral, group = umbral)) +
+  geom_point(size = 2) +
+  geom_line(linewidth = .7) +
+  labs(title = "Evolucion de la pobreza relativa",
+       subtitle = "Argentina urbana, 2016-2024 (semestres). Calculado a partir del 60% de la mediana del ITF",
+       caption = "Fuente: elaboración propia en base a EPH-INDEC.") +
+  theme(plot.title = element_text(size = 11),
+        plot.subtitle = element_text(size = 9),
+        axis.title.x = element_blank(),
+        axis.title.y = element_blank(),
+        axis.text.y = element_text(size = 10),
+        axis.text.x = element_text(size = 10, angle = 45, hjust = 1),
+        plot.caption = element_text(size = 9, hjust = 1),
+        strip.text = element_text(face = "bold")) +
+  scale_y_continuous(breaks = seq(0, .4, by = 0.05), limits = c(0, .4), 
+                     labels = scales::percent_format(accuracy = 1L))
+
+ggsave("salidas/pobreza_relativa_evolucion.png", dpi = 300, width = 7, height = 5)
+```
+
 
 
 ### Evolución del coeficiente de Gini 

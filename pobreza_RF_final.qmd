@@ -785,7 +785,7 @@ tree_rf2 <- wf %>%
 
 extract_fit_parsnip(tree_rf2) %>%
   vip::vip(geom = "col", num_features = 22) + 
-  labs(title = "Variables importantes del modelo de entrenamiento de 2018-2019 \n(método permutación)",
+  labs(title = "Variables importantes del modelo de entrenamiento de 2018-II019 \n(método permutación)",
        caption = "Fuente: elaboración propia en base a EPH 2018-IV y 2019-I",
        y = "Importancia")
 
@@ -953,14 +953,14 @@ Usar las clases desbalanceadas mejora la presición pero pierde recall.
 
 # Definir las bases y etiquetas
 datasets <- list(
-  list(data = train1, label = "Train1", ano_trim = "2016-3", tipo = "Entrenamiento"),
-  list(data = test_20171, label = "Test 2017-1", ano_trim = "2017-1", tipo = "Test"),
-  list(data = test_20172, label = "Test 2017-2", ano_trim = "2017-2", tipo = "Test"),
-  list(data = test_20173, label = "Test 2017-3", ano_trim = "2017-3", tipo = "Test"),
-  list(data = test_20174, label = "Test 2017-4", ano_trim = "2017-4", tipo = "Test"),
-  list(data = test_20181, label = "Test 2018-1", ano_trim = "2018-1", tipo = "Test"),
-  list(data = test_20182, label = "Test 2018-2", ano_trim = "2018-2", tipo = "Test"),
-  list(data = test_20183, label = "Test 2018-3", ano_trim = "2018-3", tipo = "Test")
+  list(data = train1, label = "Train1", ano_trim = "2016-III", tipo = "Entrenamiento"),
+  list(data = test_20171, label = "Test 2017-I", ano_trim = "2017-I", tipo = "Test"),
+  list(data = test_20172, label = "Test 2017-II", ano_trim = "2017-II", tipo = "Test"),
+  list(data = test_20173, label = "Test 2017-III", ano_trim = "2017-III", tipo = "Test"),
+  list(data = test_20174, label = "Test 2017-IV", ano_trim = "2017-IV", tipo = "Test"),
+  list(data = test_20181, label = "Test 2018-I", ano_trim = "2018-I", tipo = "Test"),
+  list(data = test_20182, label = "Test 2018-II", ano_trim = "2018-II", tipo = "Test"),
+  list(data = test_20183, label = "Test 2018-III", ano_trim = "2018-III", tipo = "Test")
 )
 
 # Función para aplicar augment y ajustar las columnas
@@ -1019,11 +1019,11 @@ conf_mat(matriz, truth = pobreza_dic, estimate = .pred_class, case_weights = PON
 
 # Definir las bases y etiquetas
 datasets <- list(
-  list(data = train1, label = "Train2", ano_trim = "2018-4", tipo = "Entrenamiento"),
-  list(data = test_20171, label = "Test 20192", ano_trim = "2019-2", tipo = "Test"),
-  list(data = test_20172, label = "Test 20193", ano_trim = "2019-3", tipo = "Test"),
-  list(data = test_20173, label = "Test 20194", ano_trim = "2019-4", tipo = "Test"),
-  list(data = test_20174, label = "Test 20201", ano_trim = "2020-1", tipo = "Test")
+  list(data = train2, label = "Train2", ano_trim = "2018-IV / 2019-I", tipo = "Entrenamiento"),
+  list(data = test_20192, label = "Test 20192", ano_trim = "2019-2", tipo = "Test"),
+  list(data = test_20193, label = "Test 20193", ano_trim = "2019-3", tipo = "Test"),
+  list(data = test_20194, label = "Test 20194", ano_trim = "2019-4", tipo = "Test"),
+  list(data = test_20201, label = "Test 20201", ano_trim = "2020-1", tipo = "Test")
 )
 
 # Función para aplicar augment y ajustar las columnas
@@ -1079,7 +1079,7 @@ conf_mat(matriz, truth = pobreza_dic, estimate = .pred_class, case_weights = PON
 
 # Definir las bases y etiquetas
 datasets <- list(
-  list(data = train1, label = "Train3", ano_trim = "2021-I", tipo = "Entrenamiento"),
+  list(data = train1, label = "Train3", ano_trim = "2021-I / 2021-II", tipo = "Entrenamiento"),
   list(data = test_20213, label = "Test 20213", ano_trim = "2021-III", tipo = "Test"),
   list(data = test_20214, label = "Test 20214", ano_trim = "2021-IV", tipo = "Test"),
   list(data = test_20221, label = "Test 20221" , ano_trim = "2022-I", tipo = "Test"),
@@ -1145,7 +1145,7 @@ conf_mat(matriz, truth = pobreza_dic, estimate = .pred_class) %>%
 
 # Definir las bases y etiquetas
 datasets <- list(
-  list(data = train1, label = "Train4", ano_trim = "2023-IV", tipo = "Entrenamiento"),
+  list(data = train1, label = "Train4", ano_trim = "2023-IV / 2024-I", tipo = "Entrenamiento"),
   list(data = test_20242, label = "Test 20242", ano_trim = "2024-II", tipo = "Test")
 )
 
@@ -1203,14 +1203,14 @@ conf_mat(matriz, truth = pobreza_dic, estimate = .pred_class) %>%
 
 # Definir las bases y etiquetas
 datasets <- list(
-  list(data = train1, label = "Train1", ano_trim = "2016-3", tipo = "Entrenamiento"),
-  list(data = test_20171, label = "Test 2017-1", ano_trim = "2017-1", tipo = "Test"),
-  list(data = test_20172, label = "Test 2017-2", ano_trim = "2017-2", tipo = "Test"),
-  list(data = test_20173, label = "Test 2017-3", ano_trim = "2017-3", tipo = "Test"),
-  list(data = test_20174, label = "Test 2017-4", ano_trim = "2017-4", tipo = "Test"),
-  list(data = test_20181, label = "Test 2018-1", ano_trim = "2018-1", tipo = "Test"),
-  list(data = test_20182, label = "Test 2018-2", ano_trim = "2018-2", tipo = "Test"),
-  list(data = test_20183, label = "Test 2018-3", ano_trim = "2018-3", tipo = "Test")
+  list(data = train1, label = "Train1", ano_trim = "2016-III", tipo = "Entrenamiento"),
+  list(data = test_20171, label = "Test 2017-I", ano_trim = "2017-I", tipo = "Test"),
+  list(data = test_20172, label = "Test 2017-II", ano_trim = "2017-II", tipo = "Test"),
+  list(data = test_20173, label = "Test 2017-III", ano_trim = "2017-III", tipo = "Test"),
+  list(data = test_20174, label = "Test 2017-IV", ano_trim = "2017-IV", tipo = "Test"),
+  list(data = test_20181, label = "Test 2018-I", ano_trim = "2018-I", tipo = "Test"),
+  list(data = test_20182, label = "Test 2018-II", ano_trim = "2018-II", tipo = "Test"),
+  list(data = test_20183, label = "Test 2018-III", ano_trim = "2018-III", tipo = "Test")
 )
 
 # Función para aplicar augment y ajustar las columnas
@@ -1229,7 +1229,7 @@ apply_augment <- function(data, model, label, ano_trim, tipo) {
 class_metrics <- metric_set(precision, recall,
                        accuracy, f_meas)
 
-calculate_metrics <- function(data, label, ano_trim, tipo, model_name = "Logística") {
+calculate_metrics <- function(data, label, ano_trim, tipo, model_name = "Random forest") {
   data %>%
     class_metrics(truth = pobreza_dic, estimate = .pred_class, weights = PONDIH) %>%
     bind_rows(roc_auc(data, truth = pobreza_dic, ".pred_Pobre")) %>%
@@ -1266,11 +1266,11 @@ conf_mat(matriz1, truth = pobreza_dic, estimate = .pred_class) %>%
 
 # Definir las bases y etiquetas
 datasets <- list(
-  list(data = train1, label = "Train2", ano_trim = "2018-4", tipo = "Entrenamiento"),
-  list(data = test_20171, label = "Test 20192", ano_trim = "2019-2", tipo = "Test"),
-  list(data = test_20172, label = "Test 20193", ano_trim = "2019-3", tipo = "Test"),
-  list(data = test_20173, label = "Test 20194", ano_trim = "2019-4", tipo = "Test"),
-  list(data = test_20174, label = "Test 20201", ano_trim = "2020-1", tipo = "Test")
+  list(data = train1, label = "Train2", ano_trim = "2018-IV / 2019-I", tipo = "Entrenamiento"),
+  list(data = test_20192, label = "Test 20192", ano_trim = "2019-II", tipo = "Test"),
+  list(data = test_20193, label = "Test 20193", ano_trim = "2019-III", tipo = "Test"),
+  list(data = test_20194, label = "Test 20194", ano_trim = "2019-IV", tipo = "Test"),
+  list(data = test_20201, label = "Test 20201", ano_trim = "2020-I", tipo = "Test")
 )
 
 # Función para aplicar augment y ajustar las columnas
@@ -1289,7 +1289,7 @@ apply_augment <- function(data, model, label, ano_trim, tipo) {
 class_metrics <- metric_set(precision, recall,
                        accuracy, f_meas)
 
-calculate_metrics <- function(data, label, ano_trim, tipo, model_name = "Logística") {
+calculate_metrics <- function(data, label, ano_trim, tipo, model_name = "Random forest") {
   data %>%
     class_metrics(truth = pobreza_dic, estimate = .pred_class, weights = PONDIH) %>%
     bind_rows(roc_auc(data, truth = pobreza_dic, ".pred_Pobre")) %>%
@@ -1327,7 +1327,7 @@ conf_mat(matriz2, truth = pobreza_dic, estimate = .pred_class) %>%
 
 # Definir las bases y etiquetas
 datasets <- list(
-  list(data = train1, label = "Train3", ano_trim = "2021-I", tipo = "Entrenamiento"),
+  list(data = train1, label = "Train3", ano_trim = "2021-I / 2021-II", tipo = "Entrenamiento"),
   list(data = test_20213, label = "Test 20213", ano_trim = "2021-III", tipo = "Test"),
   list(data = test_20214, label = "Test 20214", ano_trim = "2021-IV", tipo = "Test"),
   list(data = test_20221, label = "Test 20221" , ano_trim = "2022-I", tipo = "Test"),
@@ -1355,7 +1355,7 @@ apply_augment <- function(data, model, label, ano_trim, tipo) {
 class_metrics <- metric_set(precision, recall,
                        accuracy, f_meas)
 
-calculate_metrics <- function(data, label, ano_trim, tipo, model_name = "Logística") {
+calculate_metrics <- function(data, label, ano_trim, tipo, model_name = "Random forest") {
   data %>%
     class_metrics(truth = pobreza_dic, estimate = .pred_class, weights = PONDIH) %>%
     bind_rows(roc_auc(data, truth = pobreza_dic, ".pred_Pobre")) %>%
@@ -1394,7 +1394,7 @@ conf_mat(matriz3, truth = pobreza_dic, estimate = .pred_class) %>%
 
 # Definir las bases y etiquetas
 datasets <- list(
-  list(data = train1, label = "Train4", ano_trim = "2023-IV", tipo = "Entrenamiento"),
+  list(data = train1, label = "Train4", ano_trim = "2023-IV / 2024-I", tipo = "Entrenamiento"),
   list(data = test_20242, label = "Test 20242", ano_trim = "2024-II", tipo = "Test")
 )
 
@@ -1414,7 +1414,7 @@ apply_augment <- function(data, model, label, ano_trim, tipo) {
 class_metrics <- metric_set(precision, recall,
                        accuracy, f_meas)
 
-calculate_metrics <- function(data, label, ano_trim, tipo, model_name = "Logística") {
+calculate_metrics <- function(data, label, ano_trim, tipo, model_name = "Random forest") {
   data %>%
     class_metrics(truth = pobreza_dic, estimate = .pred_class, weights = PONDIH) %>%
     bind_rows(roc_auc(data, truth = pobreza_dic, ".pred_Pobre")) %>%
@@ -1469,9 +1469,11 @@ metricas_log
 ```{r Gráficos, message=FALSE, warning=FALSE}
 roc_data <- roc_curve(matriz4, truth = pobreza_dic, ".pred_Pobre")
 
+prevalence <- mean(matriz4$pobreza_dic == "Pobre", na.rm = T)
+
 optimal_threshold <- roc_data %>%
-  mutate(sum_sens_spec = sensitivity + specificity) %>%
-  filter(sum_sens_spec == max(sum_sens_spec)) %>%
+  mutate(accuracy = (sensitivity * prevalence) + (specificity * (1 - prevalence))) %>%
+  filter(accuracy == max(accuracy)) %>%
   pull(.threshold)
 
 print(optimal_threshold) # Muestra el umbral óptimo
@@ -1489,3 +1491,4 @@ ggplot(roc_data, aes(x = 1 - specificity, y = sensitivity)) +
 
 ```
 
+Con ese umbral se llega a un 83% de tasa de aciertos

@@ -1,0 +1,1509 @@
+---
+title: "Factores determinantes de la pobreza (2016-2024)"
+author: 
+  - name: "Grupo de estudios sobre desigualdad y movilidad social"
+    affiliation: "Instituto de Investagaciones Gino Germani, Facultad de Ciencias Sociales, UBA"
+date: today
+lang: es
+format: 
+  html:
+    theme: cerulean
+    toc: true
+    toc_float:
+      collapsed: false
+    grid:
+      body-width: 1000px
+  pdf:
+    toc: true
+    number-sections: true
+---
+#Preparación de la base de datos
+
+## Descarga de bases y librerías
+
+```{r Librerías y bases, message=FALSE, warning=FALSE}
+
+rm(list = ls())
+pacman::p_load(tidyverse, eph, ggsci, flextable, ggrepel, GDAtools, plotly, patchwork, tidymodels, modelsummary)
+
+eph <- get_microdata(year = 2016:2024, type = "individual", period = c(1, 2, 3, 4))
+
+eph_h <- get_microdata(year = 2016:2024, type = "hogar", period = c(1, 2, 3, 4))
+
+eph_h <- eph_h %>% 
+  select(-c("PONDIH", "PONDERA", "REGION", "AGLOMERADO", "MAS_500", "ITF", "IPCF", "DECIFR", "IDECIFR", "RDECIFR", "GDECIFR", "PDECIFR", "ADECIFR", "DECCFR", "IDECCFR", "RDECCFR", "GDECCFR", "PDECCFR", "ADECCFR"))
+
+eph <- eph %>% 
+  left_join(eph_h, by = c("ANO4", "TRIMESTRE", "CODUSU", "NRO_HOGAR"))
+
+canastas <- readxl::read_xlsx("fuentes/canastas_serie.xlsx")
+
+theme_set(theme_bw())
+
+rm(eph_h)
+```
+
+
+## Construcción de variables
+
+```{r Construcción de variables, message=FALSE, warning=FALSE}
+#Año y trimestre
+eph <- eph %>% 
+  mutate(semestre = case_when(TRIMESTRE <= 2 ~ 1,
+                              TRIMESTRE > 2 ~ 2),
+         trim = case_when(TRIMESTRE == 1 ~ "I",
+                          TRIMESTRE == 2 ~ "II",
+                          TRIMESTRE == 3 ~ "III",
+                          TRIMESTRE == 4 ~ "IV"),
+         ano2 = str_sub(as.character(ANO4), 3, 4))
+
+eph$ano_trim <- paste(as.character(eph$ANO4), as.character(eph$trim), sep = "-")
+eph$ano_sem <- paste(as.character(eph$ANO4), as.character(eph$semestre), sep = "-")
+
+#Pobreza----------------------------------
+eph <- calculate_poverty(base = eph, basket = canastas, print_summary = FALSE,
+                         window = "semester")
+
+
+
+eph <- eph %>% 
+  mutate(pobreza_dic = factor(case_when(situacion %in% c("pobre", "indigente") ~ "Pobre",
+                                 situacion %in% "no_pobre" ~ "No pobre"),
+                              levels = c("Pobre", "No pobre")))
+
+
+#Sociodemográficas------------------------
+eph <- eph %>% 
+  mutate(NIVEL_ED = ifelse(NIVEL_ED > 6, 0, NIVEL_ED))
+
+eph <- eph %>% 
+  mutate(sexo_f = factor(CH04, labels = c("Varón", "Mujer")),
+         salud_f = factor(case_when(CH08 <= 2 | CH08 > 9 ~ "Tiene",
+                                    TRUE ~ "No tiene")),
+         migrante_f = factor(case_when(CH15 >= 1 & CH15 <= 3 ~ "Nativo",
+                               CH15 == 4 ~ "Migrante lim",
+                               CH15 == 5 ~ "Migrante no lim",
+                               CH15 == 9 ~ "Nativo")),
+         edad = CH06)
+
+
+eph <- eph %>% 
+  group_by(ano_trim, CODUSU, NRO_HOGAR) %>%
+  mutate(clima_educ = max(NIVEL_ED),
+         cant_menores = sum(CH06 <= 18),
+         ocupados = sum(ESTADO == 1) / sum(CH06 >= 14)) %>%
+  mutate(clima_educ = factor(case_when(clima_educ <= 2 ~ "Primario completo",
+                                       clima_educ >= 3 & clima_educ <= 4 ~ "Secundario completo",
+                                       clima_educ >= 5 ~ "Terciario/universitario completo"),
+                             levels = c("Primario completo",
+                                        "Secundario completo",
+                                        "Terciario/universitario completo"))) %>% 
+  ungroup()
+
+region <- diccionario_regiones
+
+eph <- eph %>% 
+  left_join(region, by = c("REGION" = "codigo"))
+
+
+#Vivienda--------------------
+eph <- eph %>% 
+  mutate(vivienda = factor(case_when(II7 == 1 | II7 == 2 ~ "Propietario",
+                              TRUE ~ "No propietario")),
+         calmat = case_when(IV3 == 1 & IV4 == 1 & IV5 == 1 ~ 1,
+                            IV3 == 1 & IV4 == 1 & IV5 == 2 ~ 2,
+                            IV3 == 1 & (IV4 >= 2 & IV4 <= 5) ~ 2,
+                            IV3 == 1 & (IV4 >= 6 & IV4 <= 7) ~ 3,
+                            IV3 == 2 & IV4 == 1 & IV5 == 1 ~ 2,
+                            IV3 == 2 & IV4 == 1 & IV5 == 2 ~ 2,
+                            IV3 == 2 & (IV4 >= 2 & IV4 <= 5) ~ 3,
+                            IV3 == 2 & (IV4 >= 6 & IV4 <= 7) ~ 3,
+                            IV3 == 3 & IV4 == 1 & IV5 == 1 ~ 3,
+                            IV3 == 3 & IV4 == 1 & IV5 == 2 ~ 3,
+                            IV3 == 3 & (IV4 >= 2 & IV4 <= 5) ~ 3,
+                            IV3 == 3 & (IV4 >= 6 & IV4 <= 7) ~ 3,
+                            TRUE ~ NA_real_ ),
+         calmat_dic = factor(case_when(calmat == 1 | calmat == 2 ~ "Satisfactoria",
+                                       TRUE ~ "No satisfactoria")),
+         incalserv = factor(case_when(IV7 == 1 & IV11 == 1 ~ "Satisfactoria",
+                               TRUE ~ "No satisfactoria")),
+         hacinamiento = factor(case_when(IX_TOT/II2 > 3 ~ "Hacinamiento crítico",
+                                  IX_TOT/II2 <= 3 ~ "Sin hacinamiento")))
+
+#Laborales-------------------------------
+eph <- organize_caes(base = eph)
+
+eph$cno <- ifelse(is.na(eph$PP04D_COD), eph$PP11D_COD, eph$PP04D_COD)
+
+eph$cno12 <- ifelse(nchar(eph$cno) > 4, str_sub(eph$cno, 1, 2), str_sub(eph$cno, 1, 1))
+eph$cno3 <- ifelse(nchar(eph$cno) > 4, str_sub(eph$cno, 3, 3), str_sub(eph$cno, 2, 2))
+eph$cno4 <- ifelse(nchar(eph$cno) > 4, str_sub(eph$cno, 4, 4), str_sub(eph$cno, 3, 3))
+eph$cno5 <- ifelse(nchar(eph$cno) > 4, str_sub(eph$cno, 5, 5), str_sub(eph$cno, 4, 4))
+
+eph$cno12 <- as.numeric(eph$cno12)
+eph$cno3 <- as.numeric(eph$cno3)
+eph$cno4 <- as.numeric(eph$cno4)
+eph$cno5 <- as.numeric(eph$cno5)
+
+
+eph <- eph %>% 
+  mutate(tamano = case_when((PP04C > 0 & PP04C <= 5) | (PP04C == 99 & PP04C99 == 1) ~ 1,
+                            (PP04C > 5 & PP04C < 99) | (PP04C == 99 & (PP04C99 == 2 | PP04C99 == 3)) ~ 2,
+                            ((PP04C == 0 & PP04C99 == 0) | (PP04C == 99 & PP04C99 == 9)) & PP04A == 1 ~ 2,
+                            PP04A == 1 ~ 2,
+                            TRUE ~ NA_real_)) 
+
+eph <- eph %>% 
+  mutate(empleos_cant = factor(case_when(PP03C == 1 ~ "Un empleo",
+                                         PP03C == 2 ~ "Más de un empleo",
+                                         TRUE ~ NA_character_)),
+         intensi = factor(case_when(INTENSI == 1 ~ "Subocupado",
+                                    INTENSI == 2 ~ "Ocupado pleno",
+                                    INTENSI == 3 ~ "Sobreocupado",
+                                    TRUE ~ NA_character_)),
+         rama = substr(caes_eph_label, start = 1, stop = 28),
+         rama = factor(rama),
+         precariedad = factor(case_when(CAT_OCUP == 3 & (PP07H == 1 | PP07I == 1) ~ "No precario",
+                                 CAT_OCUP == 3 & PP07H != 1 & PP07I != 1 ~ "Precario",
+                                 CAT_OCUP == 2 & cno5 <= 2 ~ "No precario",
+                                 CAT_OCUP == 2 & cno5 > 2 ~ "Precario",
+                                 CAT_OCUP == 1 & tamano == 2 ~ "No precario",
+                                 CAT_OCUP == 1 & tamano != 2 & caes_division_cod %in% c(62, 63, 85) ~ "No precario",
+                                 CAT_OCUP == 1 & tamano != 2 & !caes_division_cod %in% c(62, 63, 85) ~ "Precario",
+                                 CAT_OCUP == 4 | CAT_OCUP == 9 ~ "Precario",
+                                 TRUE ~ NA_character_)),
+         categoria = case_when(CAT_OCUP == 1 & cno3 == 0 ~ 1,
+                               CAT_OCUP == 2 | cno3 == 1 ~ 2,
+                               (CAT_OCUP == 3 | CAT_OCUP == 4) | (cno3 == 2 | cno3 == 3) ~ 3,
+                               (CAT_OCUP == 3 | CAT_OCUP == 4) & (cno3 == 0) ~ 3,
+                               CAT_OCUP == 1 & cno3 > 1 ~ 1,
+                               CAT_OCUP == 9 & cno3 == 0 ~ 1,
+                               CAT_OCUP == 9 & cno3 > 1 ~ 3,
+                               cno3 == 9 & CAT_OCUP > 2 ~ 3),
+         condicion = factor(case_when(ESTADO == 1 ~ "Ocupado",
+                                      ESTADO == 2 ~ "Desocupado",
+                                      (ESTADO == 3 | ESTADO == 4) & CAT_INAC == 1 ~ "Inactivo jubilado",
+                                      (ESTADO == 3 | ESTADO == 4) & CAT_INAC > 1 ~ "Inactivo otro",
+                                      TRUE ~ NA_character_)))
+
+
+#Clase social----------------
+
+eph <- eph %>% 
+  mutate(cobhe = case_when(#Clase I: propietarios > 5 y directivos, gerentes, funcionarios de dirección
+    cno12 >= 0 & cno12 <= 4 ~ 1, 
+    cno12 == 6 | cno12 == 7 ~ 1,
+    
+    #Clase II: propietarios < 5 y directivos, gerentes, funcionarios de dirección  
+    cno12 == 5 ~ 2,
+    
+    #Clase III: cuenta propias profesionales/calificados
+    (cno12 == 32 | cno12 == 35 | cno12 == 51 | cno12 == 52 | cno12 == 53 |
+       cno12 == 54 | cno12 == 57 | cno12 == 58 | cno12 == 60 |
+       cno12 == 61 | cno12 == 62 | cno12 == 63 | cno12 == 64 |
+       cno12 == 65 | cno12 == 70 | cno12 == 71 | cno12 == 72 |
+       cno12 == 80 | cno12 == 82) & categoria == 2 & cno5 < 3 ~ 3,
+    
+    (cno12 == 10 | cno12 == 11 | cno12 == 20 | cno12 == 30 | cno12 == 31 | cno12 == 40 |
+       cno12 == 41 | cno12 == 42 | cno12 == 43 | cno12 == 44 | cno12 == 45 |
+       cno12 == 46 | cno12 == 47 | cno12 == 50 | cno12 == 81 | cno12 == 90 | 
+       cno12 == 91 | cno12 == 92) & categoria == 2 & cno5 <= 3 ~ 3,
+    
+    cno12 == 34 & categoria == 2 & cno5 <= 2 ~ 3,
+    cno12 == 34 & categoria == 2 & cno5 > 2 & cno4 > 1 ~ 3,
+    cno12 == 35 & categoria == 2 & cno5 > 2 & cno4 > 1 ~ 3,
+    
+    #Clase IV: trabajadores no manuales > 5
+    (cno12 >= 10 & cno12 <= 20) & categoria == 3 & tamano == 2 ~ 4,
+    cno12 == 30 & categoria == 3 & tamano == 2 ~ 4,
+    (cno12 == 31 | cno12 == 32) & categoria == 3 & tamano == 2 & cno5 <= 3 ~ 4,
+    cno12 == 35 & categoria == 3 & tamano == 2 & cno5 <= 3 ~ 4,
+    cno12 == 36 & categoria == 3 & tamano == 2 & cno5 <= 2 ~ 4,
+    (cno12 >= 40 & cno12 <= 43) & categoria == 3 & tamano == 2 ~ 4,
+    cno12 == 44 & categoria == 3 & tamano == 2 & cno5 <= 2 ~ 4,
+    (cno12 == 45 | cno12 == 46) & categoria == 3 & tamano == 2 ~ 4,
+    (cno12 >= 47 & cno12 <= 49) & categoria == 3 & tamano == 2 & cno5 <= 2 ~ 4,
+    (cno12 == 50 | cno12 == 52) & categoria == 3 & tamano == 2 ~ 4,
+    cno12 == 54 & categoria == 3 & tamano == 2 & cno5 <= 3 ~ 4,
+    cno12 == 58 & categoria == 3 & tamano == 2 & cno5 <= 2 ~ 4,
+    (cno12 >= 60 & cno12 <= 63) & categoria == 3 & tamano == 2 & cno5 <= 2 & cno4 != 2 ~ 4,
+    (cno12 >= 70 & cno12 <= 72) & categoria == 3 & tamano == 2 & cno5 <= 2 & cno4 != 2 ~ 4,
+    cno12 == 80 & categoria == 3 & tamano == 2 & cno5 <= 2 & cno4 != 2 ~ 4,
+    cno12 == 81 & categoria == 3 & tamano == 2 ~ 4,
+    cno12 == 91 & categoria == 3 & tamano == 2 ~ 4,
+    cno12 == 92 & categoria == 3 & tamano == 2 & cno5 == 1 ~ 4,
+    
+    #Clase V: trabajadores manuales > 5
+    (cno12 == 31 | cno12 == 32) & categoria == 3 & tamano == 2 & cno5 == 4 ~ 5,
+    cno12 == 34 & categoria == 3 & tamano == 2 ~ 5,
+    cno12 == 35 & categoria == 3 & tamano == 2 & cno5 == 4 ~ 5,
+    cno12 == 36 & categoria == 3 & tamano == 2 & cno5 > 2 ~ 5,
+    cno12 == 44 & categoria == 3 & tamano == 2 & cno5 > 2 ~ 5,
+    (cno12 >= 47 & cno12 <= 49) & categoria == 3 & tamano == 2 & cno5 > 2 ~ 5,
+    cno12 == 51 & categoria == 3 & tamano == 2 ~ 5,
+    cno12 == 53 & categoria == 3 & tamano == 2 ~ 5,
+    cno12 == 54 & categoria == 3 & tamano == 2 & cno5 == 4 ~ 5,
+    (cno12 == 56 | cno12 == 57)  & categoria == 3 & tamano == 2 ~ 5,
+    cno12 == 58 & categoria == 3 & tamano == 2 & cno5 > 2 ~ 5,
+    (cno12 >= 60 & cno12 <= 63) & categoria == 3 & tamano == 2 & cno5 <= 2 & cno4 == 2 ~ 5,
+    (cno12 >= 60 & cno12 <= 63) & categoria == 3 & tamano == 2 & cno5 > 2 ~ 5,
+    (cno12 == 64 | cno12 == 65)  & categoria == 3 & tamano == 2 ~ 5,
+    (cno12 >= 70 & cno12 <= 72) & categoria == 3 & tamano == 2 & cno5 <= 2 & cno4 == 2 ~ 5,
+    (cno12 >= 70 & cno12 <= 72) & categoria == 3 & tamano == 2 & cno5 > 2 ~ 5,
+    cno12 == 80 & categoria == 3 & tamano == 2 & cno5 <= 2 & cno4 == 2 ~ 5,
+    cno12 == 80 & categoria == 3 & tamano == 2 & cno5 > 2 ~ 5,
+    (cno12 == 82 | cno12 == 90) & categoria == 3 & tamano == 2  ~ 5,
+    cno12 == 92 & categoria == 3 & tamano == 2 & cno5 > 1 ~ 5,
+    
+    #Clase VI: trabajadores no manuales < 5
+    (cno12 >= 10 & cno12 <= 20) & categoria == 3 & tamano == 1 ~ 6,
+    cno12 == 30 & categoria == 3 & tamano == 1 ~ 6,
+    (cno12 == 31 | cno12 == 32) & categoria == 3 & tamano == 1 & cno5 <= 3 ~ 6,
+    cno12 == 35 & categoria == 3 & tamano == 1 & cno5 <= 3 ~ 6,
+    cno12 == 36 & categoria == 3 & tamano == 1 & cno5 <= 2 ~ 6,
+    (cno12 >= 40 & cno12 <= 43) & categoria == 3 & tamano == 1 ~ 6,
+    cno12 == 44 & categoria == 3 & tamano == 1 & cno5 <= 2 ~ 6,
+    (cno12 == 45 | cno12 == 46) & categoria == 3 & tamano == 1 ~ 6,
+    (cno12 >= 47 & cno12 <= 49) & categoria == 3 & tamano == 1 & cno5 <= 2 ~ 6,
+    (cno12 == 50 | cno12 == 52) & categoria == 3 & tamano == 1 ~ 6,
+    cno12 == 54 & categoria == 3 & tamano == 1 & cno5 <= 3 ~ 6,
+    cno12 == 58 & categoria == 3 & tamano == 1 & cno5 <= 2 ~ 6,
+    (cno12 >= 60 & cno12 <= 63) & categoria == 3 & tamano == 1 & cno5 <= 2 & cno4 != 2 ~ 6,
+    (cno12 >= 70 & cno12 <= 72) & categoria == 3 & tamano == 1 & cno5 <= 2 & cno4 != 2 ~ 6,
+    cno12 == 80 & categoria == 3 & tamano == 1 & cno5 <= 2 & cno4 != 2 ~ 6,
+    cno12 == 81 & categoria == 3 & tamano == 1 ~ 6,
+    cno12 == 91 & categoria == 3 & tamano == 1 ~ 6,
+    cno12 == 92 & categoria == 3 & tamano == 1 & cno5 == 1 ~ 6,
+    
+    #Clase VII: trabajadores manuales < 5
+    (cno12 == 31 | cno12 == 32) & categoria == 3 & tamano == 1 & cno5 == 4 ~ 7,
+    cno12 == 34 & categoria == 3 & tamano == 1 ~ 7,
+    cno12 == 35 & categoria == 3 & tamano == 1 & cno5 == 4 ~ 7,
+    cno12 == 36 & categoria == 3 & tamano == 1 & cno5 > 2 ~ 7,
+    cno12 == 44 & categoria == 3 & tamano == 1 & cno5 > 2 ~ 7,
+    (cno12 >= 47 & cno12 <= 49) & categoria == 3 & tamano == 1 & cno5 > 2 ~ 7,
+    cno12 == 51 & categoria == 3 & tamano == 1 ~ 7,
+    cno12 == 53 & categoria == 3 & tamano == 1 ~ 7,
+    cno12 == 54 & categoria == 3 & tamano == 1 & cno5 == 4 ~ 7,
+    (cno12 == 56 | cno12 == 57)  & categoria == 3 & tamano == 1 ~ 7,
+    cno12 == 58 & categoria == 3 & tamano == 1 & cno5 > 2 ~ 7,
+    (cno12 >= 60 & cno12 <= 63) & categoria == 3 & tamano == 1 & cno5 <= 2 & cno4 == 2 ~ 7,
+    (cno12 >= 60 & cno12 <= 63) & categoria == 3 & tamano == 1 & cno5 > 2 ~ 7,
+    (cno12 == 64 | cno12 == 65)  & categoria == 3 & tamano == 1 ~ 7,
+    (cno12 >= 70 & cno12 <= 72) & categoria == 3 & tamano == 1 & cno5 <= 2 & cno4 == 2 ~ 7,
+    (cno12 >= 70 & cno12 <= 72) & categoria == 3 & tamano == 1 & cno5 > 2 ~ 7,
+    cno12 == 80 & categoria == 3 & tamano == 1 & cno5 <= 2 & cno4 == 2 ~ 7,
+    cno12 == 80 & categoria == 3 & tamano == 1 & cno5 > 2 ~ 7,
+    (cno12 == 82 | cno12 == 90) & categoria == 3 & tamano == 1  ~ 7,
+    cno12 == 92 & categoria == 3 & tamano == 1 & cno5 > 1 ~ 7,
+    cno12 == 55 ~ 7,
+    is.na(tamano) & PP04B1 == 1 ~ 7,
+    
+    #Clase VIII: Cuenta propia semi-calificados y no calificados
+    (cno12 == 10 | cno12 == 32 | cno12 == 51 | cno12 == 52 | cno12 == 53 |
+       cno12 == 54 | cno12 == 57 | cno12 == 58 | cno12 == 60 |
+       cno12 == 61 | cno12 == 62 | cno12 == 63 | cno12 == 64 |
+       cno12 == 65 | cno12 == 70 | cno12 == 71 | cno12 == 72 |
+       cno12 == 80 | cno12 == 82) & categoria == 2 & (cno5 == 3 | cno5 == 4) ~ 8,
+    
+    (cno12 == 11 | cno12 == 20 | cno12 == 30 | cno12 == 31 | cno12 == 40 |
+       cno12 == 41 | cno12 == 42 | cno12 == 43 | cno12 == 44 | cno12 == 45 |
+       cno12 == 46 | cno12 == 47 | cno12 == 50 | cno12 == 81 | cno12 == 90 | 
+       cno12 == 91 | cno12 == 92) & categoria == 2 & (cno5 == 4) ~ 8,
+    
+    cno12 == 34 & categoria == 2 & cno5 > 2 & cno4 == 1 ~ 8,
+    cno12 == 35 & categoria == 2 & cno5 > 2 & cno4 == 1 ~ 8,
+    cno12 == 36 & categoria == 2 ~ 8,
+    cno12 == 56 & categoria == 2 ~ 8,
+    cno12 == 33 ~ 8,
+    categoria == 2 & cno5 == 4 ~ 8,
+    
+    TRUE ~ NA_real_))
+
+eph$cobhe_f <- factor(eph$cobhe, 
+                      labels = c('Propietarios y directivos >5',
+                                 'Propietarios y directivos <=5',
+                                 'Cuenta propia profesionales / calificados',
+                                 'Trabajadores no manuales >5',
+                                 'Trabajadores manuales >5',
+                                 'Trabajadores no manuales <=5',
+                                 'Trabajadores manuales <=5',
+                                 'Cuenta propia no calificados'))
+
+eph <- eph %>% 
+  mutate(horas = PP3E_TOT + PP3F_TOT) %>% 
+  mutate(horas = ifelse(horas > 168, NA_real_, horas))
+
+#Ingresos no laborales-------------
+eph <- eph %>% 
+  mutate(subsidio = case_when(V5 == 1 ~ 1,
+                              V5 == 2 | V5 == 9 ~ 0))
+
+#Salva la base-------
+# saveRDS(eph, "bases/eph.rds")
+
+
+```
+
+
+## Selección de variables para modelar y sets de entrenamiento y testeo
+
+Se va a utilizar el primer trimestre de 2017 para entrenar el modelo y el segundo trimestre de 2017 para testearlo.
+
+```{r Selección de variables para modelar, message=FALSE, warning=FALSE}
+#Me quedo con hogares con jefe de hogar ocupado
+eph_mod <- eph %>% 
+  filter(CH03 == 1, ESTADO == 1)
+
+#Selecciono variables para modelar
+eph_mod <- eph_mod %>% 
+  select(ano_trim, ano_sem, CODUSU, NRO_HOGAR, sexo_f, edad, salud_f, migrante_f, 
+         clima_educ, cant_menores, ocupados, 
+         cobhe_f, pobreza_dic, empleos_cant, 
+         intensi, rama, precariedad, region,
+         horas, vivienda, calmat_dic, incalserv, hacinamiento, subsidio, PONDIH)
+
+train1 <- eph_mod %>% 
+  filter(ano_trim %in% c("2016-III", "2016-IV"))
+
+test1 <- eph_mod %>%
+  filter(ano_trim %in% c("2017-I", "2017-II", "2017-III", "2017-IV",
+                         "2018-I", "2018-II"))
+
+train2 <- eph_mod %>% 
+  filter(ano_trim %in% c("2018-III", "2018-IV"))
+
+test2 <- eph_mod %>%
+  filter(ano_trim %in% c("2019-I", "2019-II", "2019-III", "2019-IV",
+                         "2020-I", "2020-II"))
+
+train3 <- eph_mod %>%
+  filter(ano_trim %in% c("2020-III", "2020-IV"))
+
+test3 <- eph_mod %>%
+  filter(ano_trim %in% c("2021-I", "2021-II", "2021-III", "2021-IV",
+                         "2022-I", "2022-II"))
+
+train4 <- eph_mod %>%
+  filter(ano_trim %in% c("2022-III", "2022-IV"))
+
+test4 <- eph_mod %>%
+  filter(ano_trim %in% c("2023-I", "2023-II", "2023-III", "2023-IV",
+                         "2024-I", "2024-II", "2024-III"))
+
+gc()
+
+
+```
+
+
+# Modelado
+
+## Regresión logística
+
+
+```{r Regresión logística 1, message=FALSE, warning=FALSE}
+
+#Preprocesamiento
+recetas1 <- recipe(pobreza_dic ~ ., data = train1) %>%
+  update_role(ano_trim, ano_sem, CODUSU, NRO_HOGAR, new_role = "ID") %>%
+  step_relevel(pobreza_dic, ref_level = "No pobre") %>% 
+  step_rm(ocupados, cobhe_f, empleos_cant, intensi, rama, precariedad, horas,
+          calmat_dic, vivienda, incalserv, hacinamiento, PONDIH) %>% 
+  step_naomit(pobreza_dic) %>%
+  themis::step_upsample(pobreza_dic, over_ratio = 1)
+
+recetas2 <- recipe(pobreza_dic ~ ., data = train1) %>%
+  update_role(ano_trim, ano_sem, CODUSU, NRO_HOGAR, new_role = "ID") %>%
+  step_other(rama, threshold = 0.05, other = "Otro") %>%
+  step_relevel(pobreza_dic, ref_level = "No pobre") %>% 
+  step_relevel(cobhe_f, ref_level = "Cuenta propia no calificados") %>%
+  step_relevel(intensi, ref_level = "Subocupado") %>%
+  step_relevel(rama, ref_level = "Servicio domestico") %>%
+  step_rm(PONDIH) %>% 
+  step_naomit(pobreza_dic) %>%
+  themis::step_upsample(pobreza_dic, over_ratio = 1)
+
+#Especificación del modelo
+log_reg_spec <- logistic_reg() %>%
+  set_mode("classification") %>%
+  set_engine("glm")
+
+#Workflow y ajuste
+wf1 <- workflow() %>%
+  add_recipe(recetas1) %>%
+  add_model(log_reg_spec)
+
+log_reg <- wf1 %>%
+  fit(data = train1)
+
+wf2 <- workflow() %>%
+  add_recipe(recetas2) %>%
+  add_model(log_reg_spec)
+
+log_reg1 <- wf2 %>%
+  fit(data = train1)
+
+modelsummary(list(log_reg, log_reg1), exponentiate = TRUE,
+             stars = c(`***` = 0.01, `**` = 0.05, `*` = 0.1))
+
+saveRDS(log_reg1, "modelos entrenados/log_reg1.rds")
+
+```
+
+```{r Regresión logística 2, message=FALSE, warning=FALSE}
+
+#Preprocesamiento
+recetas1 <- recipe(pobreza_dic ~ ., data = train2) %>%
+  update_role(ano_trim, ano_sem, CODUSU, NRO_HOGAR, new_role = "ID") %>%
+  step_relevel(pobreza_dic, ref_level = "No pobre") %>% 
+  step_rm(ocupados, cobhe_f, empleos_cant, intensi, rama, precariedad, horas,
+          calmat_dic, vivienda, incalserv, hacinamiento, PONDIH) %>%
+  step_naomit(pobreza_dic) %>%
+  themis::step_upsample(pobreza_dic, over_ratio = 1)
+
+recetas2 <- recipe(pobreza_dic ~ ., data = train2) %>%
+  update_role(ano_trim, ano_sem, CODUSU, NRO_HOGAR, new_role = "ID") %>%
+  step_other(rama, threshold = 0.05, other = "Otro") %>%
+  step_relevel(pobreza_dic, ref_level = "No pobre") %>% 
+  step_relevel(cobhe_f, ref_level = "Cuenta propia no calificados") %>%
+  step_relevel(intensi, ref_level = "Subocupado") %>%
+  step_relevel(rama, ref_level = "Servicio domestico") %>%
+  step_naomit(pobreza_dic) %>%
+  step_rm(PONDIH) %>%
+  themis::step_upsample(pobreza_dic, over_ratio = 1)
+
+#Especificación del modelo
+log_reg_spec <- logistic_reg() %>%
+  set_mode("classification") %>%
+  set_engine("glm")
+
+#Workflow y ajuste
+wf1 <- workflow() %>%
+  add_recipe(recetas1) %>%
+  add_model(log_reg_spec)
+
+log_reg <- wf1 %>%
+  fit(data = train2)
+
+wf2 <- workflow() %>%
+  add_recipe(recetas2) %>%
+  add_model(log_reg_spec)
+
+log_reg2 <- wf2 %>%
+  fit(data = train2)
+
+modelsummary(list(log_reg, log_reg2), exponentiate = TRUE,
+             stars = c(`***` = 0.01, `**` = 0.05, `*` = 0.1))
+
+saveRDS(log_reg2, "modelos entrenados/log_reg2.rds")
+
+```
+
+```{r Regresión logística 3, message=FALSE, warning=FALSE}
+
+#Preprocesamiento
+recetas1 <- recipe(pobreza_dic ~ ., data = train3) %>%
+  update_role(ano_trim, ano_sem, CODUSU, NRO_HOGAR, new_role = "ID") %>%
+  step_relevel(pobreza_dic, ref_level = "No pobre") %>% 
+  step_rm(ocupados, cobhe_f, empleos_cant, intensi, rama, precariedad, horas,
+          calmat_dic, vivienda, incalserv, hacinamiento, PONDIH) %>%
+  step_naomit(pobreza_dic) %>%
+  themis::step_upsample(pobreza_dic, over_ratio = 1)
+
+recetas2 <- recipe(pobreza_dic ~ ., data = train3) %>%
+  update_role(ano_trim, ano_sem, CODUSU, NRO_HOGAR, new_role = "ID") %>%
+  step_other(rama, threshold = 0.05, other = "Otro") %>%
+  step_relevel(pobreza_dic, ref_level = "No pobre") %>% 
+  step_relevel(cobhe_f, ref_level = "Cuenta propia no calificados") %>%
+  step_relevel(intensi, ref_level = "Subocupado") %>%
+  step_relevel(rama, ref_level = "Servicio domestico") %>%
+  step_naomit(pobreza_dic) %>%
+  step_rm(PONDIH) %>%
+  themis::step_upsample(pobreza_dic, over_ratio = 1)
+
+#Especificación del modelo
+log_reg_spec <- logistic_reg() %>%
+  set_mode("classification") %>%
+  set_engine("glm")
+
+#Workflow y ajuste
+wf1 <- workflow() %>%
+  add_recipe(recetas1) %>%
+  add_model(log_reg_spec)
+
+log_reg <- wf1 %>%
+  fit(data = train3)
+
+wf2 <- workflow() %>%
+  add_recipe(recetas2) %>%
+  add_model(log_reg_spec)
+
+log_reg3 <- wf2 %>%
+  fit(data = train3)
+
+modelsummary(list(log_reg, log_reg3), exponentiate = TRUE,
+             stars = c(`***` = 0.01, `**` = 0.05, `*` = 0.1))
+
+saveRDS(log_reg3, "modelos entrenados/log_reg3.rds")
+
+```
+
+
+```{r Regresión logística 4, message=FALSE, warning=FALSE}
+
+#Preprocesamiento
+recetas1 <- recipe(pobreza_dic ~ ., data = train4) %>%
+  update_role(ano_trim, ano_sem, CODUSU, NRO_HOGAR, new_role = "ID") %>%
+  step_relevel(pobreza_dic, ref_level = "No pobre") %>% 
+  step_rm(ocupados, cobhe_f, empleos_cant, intensi, rama, precariedad, horas,
+          calmat_dic, vivienda, incalserv, hacinamiento, PONDIH) %>%
+  step_naomit(pobreza_dic) %>%
+  themis::step_upsample(pobreza_dic, over_ratio = 1)
+
+recetas2 <- recipe(pobreza_dic ~ ., data = train4) %>%
+  update_role(ano_trim, ano_sem, CODUSU, NRO_HOGAR, new_role = "ID") %>%
+  step_other(rama, threshold = 0.05, other = "Otro") %>%
+  step_relevel(pobreza_dic, ref_level = "No pobre") %>% 
+  step_relevel(cobhe_f, ref_level = "Cuenta propia no calificados") %>%
+  step_relevel(intensi, ref_level = "Subocupado") %>%
+  step_relevel(rama, ref_level = "Servicio domestico") %>%
+  step_naomit(pobreza_dic) %>%
+  step_rm(PONDIH) %>%
+  themis::step_upsample(pobreza_dic, over_ratio = 1)
+
+#Especificación del modelo
+log_reg_spec <- logistic_reg() %>%
+  set_mode("classification") %>%
+  set_engine("glm")
+
+#Workflow y ajuste
+wf1 <- workflow() %>%
+  add_recipe(recetas1) %>%
+  add_model(log_reg_spec)
+
+log_reg <- wf1 %>%
+  fit(data = train4)
+
+wf2 <- workflow() %>%
+  add_recipe(recetas2) %>%
+  add_model(log_reg_spec)
+
+log_reg4 <- wf2 %>%
+  fit(data = train4)
+
+modelsummary(list(log_reg, log_reg4), exponentiate = TRUE,
+             stars = c(`***` = 0.01, `**` = 0.05, `*` = 0.1))
+
+saveRDS(log_reg4, "modelos entrenados/log_reg4.rds")
+
+```
+
+
+## Random Forest
+
+```{r Random Forest 1, message=FALSE, warning=FALSE}
+set.seed(9928)
+
+#Preprocesamiento
+recetas <- recipe(pobreza_dic ~ ., data = train1) %>%
+  update_role(ano_trim, ano_sem, CODUSU, NRO_HOGAR, new_role = "ID") %>%
+  step_other(rama, threshold = 0.05, other = "Otro") %>%
+  step_naomit(pobreza_dic) %>%
+  step_rm(PONDIH) %>% 
+  themis::step_upsample(pobreza_dic, over_ratio = 1)
+
+#Workflow
+wf <- workflow() %>%
+  add_recipe(recetas) 
+
+#Hiperparámetros y especificación del modelo
+rf_spec <- rand_forest(
+  trees = 400,
+  mtry = tune(),
+  min_n = tune()
+  ) %>%
+  set_mode("classification") %>%
+  set_engine("ranger", num.threads = 4, importance = 'permutation', oob.error = TRUE)
+
+tune_wf <- wf %>%
+  add_model(rf_spec)
+
+#Validación cruzada
+set.seed(28872)
+
+folds <- vfold_cv(train1, v = 5)
+
+#Tuning
+tune_params <- tune_grid(tune_wf,
+                         resamples = folds,
+                         grid = 20,
+                         metrics = metric_set(precision, recall,
+                                              roc_auc, f_meas))
+
+#Revisión de parametros
+autoplot(tune_params)+
+  theme_minimal()
+
+#Selección de parámetros
+show_best(tune_params, metric = "roc_auc")
+
+best_ROC <- select_best(tune_params, metric = "roc_auc")
+
+final_rf <- finalize_model(
+  rf_spec,
+  best_ROC
+)
+
+final_rf
+
+
+#Incorporación al workflow
+tree_rf1 <- wf %>%
+  add_model(final_rf) %>% 
+  fit(train1)
+
+#OOB error
+extract_fit_parsnip(tree_rf1)$fit$prediction.error
+
+#Importancia de variables
+extract_fit_parsnip(tree_rf1) %>%
+  vip::vip(geom = "col", num_features = 22) + 
+  labs(title = "Variables importantes del modelo de entrenamiento de 2016 (III-IV) \n(método permutación)",
+       caption = "Fuente: elaboración propia en base a EPH-INDEC",
+       y = "Importancia") %>% 
+  theme(
+    axis.text.y = element_text(size = 10),
+    axis.text.x = element_text(size = 10),
+  )
+
+ggsave("salidas/rf_train1.png", width = 8, height = 5)
+
+saveRDS(tree_rf1, "modelos entrenados/tree_rf1.rds")
+
+```
+
+```{r Random Forest 2, message=FALSE, warning=FALSE}
+set.seed(9928)
+
+#Preprocesamiento
+recetas <- recipe(pobreza_dic ~ ., data = train2) %>%
+  update_role(ano_trim, ano_sem, CODUSU, NRO_HOGAR, new_role = "ID") %>%
+  step_other(rama, threshold = 0.05, other = "Otro") %>%
+  step_naomit(pobreza_dic) %>%
+  step_rm(PONDIH) %>%
+  themis::step_upsample(pobreza_dic, over_ratio = 1)
+
+#Workflow
+wf <- workflow() %>%
+  add_recipe(recetas) 
+
+#Hiperparámetros y especificación del modelo
+rf_spec <- rand_forest(
+  trees = 400,
+  mtry = tune(),
+  min_n = tune()
+  ) %>%
+  set_mode("classification") %>%
+  set_engine("ranger", num.threads = 4, importance = 'permutation', oob.error = TRUE)
+
+tune_wf <- wf %>%
+  add_model(rf_spec)
+
+#Validación cruzada
+set.seed(28872)
+
+folds <- vfold_cv(train2, v = 5)
+
+#Tuning
+tune_params <- tune_grid(tune_wf,
+                         resamples = folds,
+                         grid = 20,
+                         metrics = metric_set(precision, recall,
+                                              roc_auc, f_meas))
+
+#Revisión de parametros
+autoplot(tune_params)+
+  theme_minimal()
+
+#Selección de parámetros
+show_best(tune_params, metric = "roc_auc")
+
+best_ROC <- select_best(tune_params, metric = "roc_auc")
+
+final_rf <- finalize_model(
+  rf_spec,
+  best_ROC
+)
+
+final_rf
+
+
+#Incorporación al workflow
+tree_rf2 <- wf %>%
+  add_model(final_rf) %>% 
+  fit(train3)
+
+#OOB error
+extract_fit_parsnip(tree_rf2)$fit$prediction.error
+
+#Importancia de variables
+extract_fit_parsnip(tree_rf2) %>%
+  vip::vip(geom = "col", num_features = 22) + 
+  labs(title = "Variables importantes del modelo de entrenamiento de 2018 (III-IV) \n(método permutación)",
+       caption = "Fuente: elaboración propia en base a EPH-INDEC",
+       y = "Importancia") +
+  theme(
+    axis.text.y = element_text(size = 10),
+    axis.text.x = element_text(size = 10),
+  )
+
+
+ggsave("salidas/rf_train2.png", width = 8, height = 5)
+
+saveRDS(tree_rf2, "modelos entrenados/tree_rf2.rds")
+
+```
+
+```{r Random Forest 3, message=FALSE, warning=FALSE}
+set.seed(9928)
+
+#Preprocesamiento
+recetas <- recipe(pobreza_dic ~ ., data = train3) %>%
+  update_role(ano_trim, ano_sem, CODUSU, NRO_HOGAR, new_role = "ID") %>%
+  step_other(rama, threshold = 0.05, other = "Otro") %>%
+  step_naomit(pobreza_dic) %>%
+  step_rm(PONDIH) %>%
+  themis::step_upsample(pobreza_dic, over_ratio = 1)
+
+#Workflow
+wf <- workflow() %>%
+  add_recipe(recetas) 
+
+#Hiperparámetros y especificación del modelo
+rf_spec <- rand_forest(
+  trees = 400,
+  mtry = tune(),
+  min_n = tune()
+  ) %>%
+  set_mode("classification") %>%
+  set_engine("ranger", num.threads = 4, importance = 'permutation', oob.error = TRUE)
+
+tune_wf <- wf %>%
+  add_model(rf_spec)
+
+#Validación cruzada
+set.seed(28872)
+
+folds <- vfold_cv(train3, v = 5)
+
+#Tuning
+tune_params <- tune_grid(tune_wf,
+                         resamples = folds,
+                         grid = 20,
+                         metrics = metric_set(precision, recall,
+                                              roc_auc, f_meas))
+
+#Revisión de parametros
+autoplot(tune_params)+
+  theme_minimal()
+
+#Selección de parámetros
+show_best(tune_params, metric = "roc_auc")
+
+best_ROC <- select_best(tune_params, metric = "roc_auc")
+
+final_rf <- finalize_model(
+  rf_spec,
+  best_ROC
+)
+
+final_rf
+
+
+#Incorporación al workflow
+tree_rf3 <- wf %>%
+  add_model(final_rf) %>% 
+  fit(train3)
+
+#OOB error
+extract_fit_parsnip(tree_rf3)$fit$prediction.error
+
+#Importancia de variables
+extract_fit_parsnip(tree_rf3) %>%
+  vip::vip(geom = "col", num_features = 22) + 
+  labs(title = "Variables importantes del modelo de entrenamiento de 2020 (III-IV) \n(método permutación)",
+       caption = "Fuente: elaboración propia en base a EPH-INDEC",
+       y = "Importancia") +
+  theme(
+    axis.text.y = element_text(size = 10),
+    axis.text.x = element_text(size = 10),
+  )
+
+ggsave("salidas/rf_train3.png", width = 8, height = 5)
+
+saveRDS(tree_rf3, "modelos entrenados/tree_rf3.rds")
+
+```
+
+```{r Random Forest 4, message=FALSE, warning=FALSE}
+set.seed(9928)
+
+#Preprocesamiento
+recetas <- recipe(pobreza_dic ~ ., data = train4) %>%
+  update_role(ano_trim, ano_sem, CODUSU, NRO_HOGAR, new_role = "ID") %>%
+  step_other(rama, threshold = 0.05, other = "Otro") %>%
+  step_naomit(pobreza_dic) %>%
+  step_rm(PONDIH) %>%
+  themis::step_upsample(pobreza_dic, over_ratio = 1)
+
+#Workflow
+wf <- workflow() %>%
+  add_recipe(recetas) 
+
+#Hiperparámetros y especificación del modelo
+rf_spec <- rand_forest(
+  trees = 400,
+  mtry = tune(),
+  min_n = tune()
+  ) %>%
+  set_mode("classification") %>%
+  set_engine("ranger", num.threads = 4, importance = 'permutation', oob.error = TRUE)
+
+tune_wf <- wf %>%
+  add_model(rf_spec)
+
+#Validación cruzada
+set.seed(28872)
+
+folds <- vfold_cv(train4, v = 5)
+
+#Tuning
+tune_params <- tune_grid(tune_wf,
+                         resamples = folds,
+                         grid = 20,
+                         metrics = metric_set(precision, recall,
+                                              roc_auc, f_meas))
+
+#Revisión de parametros
+autoplot(tune_params)+
+  theme_minimal()
+
+#Selección de parámetros
+show_best(tune_params, metric = "roc_auc")
+
+best_ROC <- select_best(tune_params, metric = "roc_auc")
+
+final_rf <- finalize_model(
+  rf_spec,
+  best_ROC
+)
+
+final_rf
+
+
+#Incorporación al workflow
+tree_rf4 <- wf %>%
+  add_model(final_rf) %>% 
+  fit(train4)
+
+#OOB error
+extract_fit_parsnip(tree_rf4)$fit$prediction.error
+
+#Importancia de variables
+extract_fit_parsnip(tree_rf4) %>%
+  vip::vip(geom = "col", num_features = 22) + 
+  labs(title = "Variables importantes del modelo de entrenamiento de 2022 (III-IV) \n(método permutación)",
+       caption = "Fuente: elaboración propia en base a EPH 2023-IV y 2024-I",
+       y = "Importancia") +
+  theme(
+    axis.text.y = element_text(size = 10),
+    axis.text.x = element_text(size = 10),
+  )
+
+ggsave("salidas/rf_train4.png", width = 8, height = 5)
+
+saveRDS(tree_rf4, "modelos entrenados/tree_rf4.rds")
+
+```
+
+
+# Comparando modelos
+
+El F1 no mejora demasiado si cambio el cutoff. Se sacrifica precisión por recall y accuracy. Para tener más precisión hay que agregar ingresos, pero el modelo ahí se torna medio recursivo.
+
+Usar las clases desbalanceadas mejora la presición pero pierde recall.
+
+```{r Evaluación regresión logística 1, message=FALSE, warning=FALSE}
+
+# Definir las bases y etiquetas
+datasets <- list(
+  list(data = train1, label = "Train1", ano_trim = "2016-III / 2016-IV", tipo = "Entrenamiento"),
+  list(data = test1, label = "Test1", ano_trim = "2017-I / 2018-II", tipo = "Test"))
+
+# Función para aplicar augment y ajustar las columnas
+apply_augment <- function(data, model, label, ano_trim, tipo) {
+  augment(model, new_data = data) %>%
+    select(-starts_with(".pred"), everything(), starts_with(".pred")) %>%
+    mutate(
+      .pred_class = fct_relevel(.pred_class, "Pobre", "No pobre"),
+      base = label,
+      ano_trim = ano_trim,
+      tipo = tipo
+    )
+}
+
+# Función para calcular métricas
+class_metrics <- metric_set(precision, recall,
+                       accuracy, f_meas)
+
+calculate_metrics <- function(data, label, ano_trim, tipo, model_name = "Logística") {
+  data %>%
+    class_metrics(truth = pobreza_dic, estimate = .pred_class, weights = PONDIH) %>%
+    bind_rows(roc_auc(data, truth = pobreza_dic, ".pred_Pobre")) %>%
+    add_column(base = label, .before = ".metric") %>%
+    add_column(modelo = model_name, .before = "base") %>% 
+    add_column(ano_trim = ano_trim, .before = "modelo") %>%
+    add_column(tipo = tipo, .before = "ano_trim")
+}
+
+# Aplicar augment y calcular métricas para todas las bases
+metricas <- map_dfr(datasets, ~ {
+  augmented_data <- apply_augment(.x$data, log_reg1, .x$label, .x$ano_trim, .x$tipo)
+  calculate_metrics(augmented_data, .x$label, .x$ano_trim, .x$tipo)
+})
+
+# Pivotar los resultados
+metricas_log1 <- metricas %>%
+  pivot_wider(names_from = ".metric", values_from = ".estimate")
+
+
+# Matriz de confusión
+matriz <- augment(log_reg1, new_data = train1) %>% 
+  select(-starts_with(".pred"), everything(), starts_with(".pred")) %>%
+  mutate(.pred_class = fct_relevel(.pred_class, "Pobre", "No pobre"))
+
+conf_mat(matriz, truth = pobreza_dic, estimate = .pred_class, case_weights = PONDIH) %>%
+  autoplot(type = "heatmap") +
+  labs(title = "Matriz de confusión en Train 2016-III / 2016-IV",
+       caption = "Fuente: elaboración propia en base a EPH")
+
+
+
+```
+
+
+```{r Evaluación regresión 2, message=FALSE, warning=FALSE}
+
+# Definir las bases y etiquetas
+datasets <- list(
+  list(data = train2, label = "Train2", ano_trim = "2018-III / 2018-IV", tipo = "Entrenamiento"),
+  list(data = test2, label = "Test2", ano_trim = "2019-I / 2020-II", tipo = "Test")
+)
+
+# Función para aplicar augment y ajustar las columnas
+apply_augment <- function(data, model, label, ano_trim, tipo) {
+  augment(model, new_data = data) %>%
+    select(-starts_with(".pred"), everything(), starts_with(".pred")) %>%
+    mutate(
+      .pred_class = fct_relevel(.pred_class, "Pobre", "No pobre"),
+      base = label,
+      ano_trim = ano_trim,
+      tipo = tipo
+    )
+}
+
+# Función para calcular métricas
+class_metrics <- metric_set(precision, recall,
+                       accuracy, f_meas)
+
+calculate_metrics <- function(data, label, ano_trim, tipo, model_name = "Logística") {
+  data %>%
+    class_metrics(truth = pobreza_dic, estimate = .pred_class, weights = PONDIH) %>%
+    bind_rows(roc_auc(data, truth = pobreza_dic, ".pred_Pobre")) %>%
+    add_column(base = label, .before = ".metric") %>%
+    add_column(modelo = model_name, .before = "base") %>% 
+    add_column(ano_trim = ano_trim, .before = "modelo") %>%
+    add_column(tipo = tipo, .before = "ano_trim")
+}
+
+# Aplicar augment y calcular métricas para todas las bases
+metricas <- map_dfr(datasets, ~ {
+  augmented_data <- apply_augment(.x$data, log_reg2, .x$label, .x$ano_trim, .x$tipo)
+  calculate_metrics(augmented_data, .x$label, .x$ano_trim, .x$tipo)
+})
+
+# Pivotar los resultados
+metricas_log2 <- metricas %>%
+  pivot_wider(names_from = ".metric", values_from = ".estimate")
+
+
+# Matriz de confusión
+matriz <- augment(log_reg2, new_data = train2) %>% 
+  select(-starts_with(".pred"), everything(), starts_with(".pred")) %>%
+  mutate(.pred_class = fct_relevel(.pred_class, "Pobre", "No pobre"))
+
+conf_mat(matriz, truth = pobreza_dic, estimate = .pred_class, case_weights = PONDIH) %>%
+  autoplot(type = "heatmap") +
+  labs(title = "Matriz de confusión en Train 2018-III / 2018-IV",
+       caption = "Fuente: elaboración propia en base a EPH")
+
+```
+
+```{r Evaluación regresión logística 3, message=FALSE, warning=FALSE}
+
+# Definir las bases y etiquetas
+datasets <- list(
+  list(data = train3, label = "Train3", ano_trim = "2020-III / 2020-IV", tipo = "Entrenamiento"),
+  list(data = test3, label = "Test3", ano_trim = "2021-I / 2022-II", tipo = "Test")
+)
+
+# Función para aplicar augment y ajustar las columnas
+apply_augment <- function(data, model, label, ano_trim, tipo) {
+  augment(model, new_data = data) %>%
+    select(-starts_with(".pred"), everything(), starts_with(".pred")) %>%
+    mutate(
+      .pred_class = fct_relevel(.pred_class, "Pobre", "No pobre"),
+      base = label,
+      ano_trim = ano_trim,
+      tipo = tipo
+    )
+}
+
+# Función para calcular métricas
+class_metrics <- metric_set(precision, recall,
+                       accuracy, f_meas)
+
+calculate_metrics <- function(data, label, ano_trim, tipo, model_name = "Logística") {
+  data %>%
+    class_metrics(truth = pobreza_dic, estimate = .pred_class, weights = PONDIH) %>%
+    bind_rows(roc_auc(data, truth = pobreza_dic, ".pred_Pobre")) %>%
+    add_column(base = label, .before = ".metric") %>%
+    add_column(modelo = model_name, .before = "base") %>% 
+    add_column(ano_trim = ano_trim, .before = "modelo") %>%
+    add_column(tipo = tipo, .before = "ano_trim")
+}
+
+# Aplicar augment y calcular métricas para todas las bases
+metricas <- map_dfr(datasets, ~ {
+  augmented_data <- apply_augment(.x$data, log_reg3, .x$label, .x$ano_trim, .x$tipo)
+  calculate_metrics(augmented_data, .x$label, .x$ano_trim, .x$tipo)
+})
+
+# Pivotar los resultados
+metricas_log3 <- metricas %>%
+  pivot_wider(names_from = ".metric", values_from = ".estimate")
+
+
+# Matriz de confusión
+matriz <- augment(log_reg3, new_data = train3) %>% 
+  select(-starts_with(".pred"), everything(), starts_with(".pred")) %>%
+  mutate(.pred_class = fct_relevel(.pred_class, "Pobre", "No pobre"))
+
+conf_mat(matriz, truth = pobreza_dic, estimate = .pred_class, case_weights = PONDIH) %>%
+  autoplot(type = "heatmap") +
+  labs(title = "Matriz de confusión en Train 2020-III / 2020-IV",
+       caption = "Fuente: elaboración propia en base a EPH")
+
+```
+
+
+```{r Evaluación regresión logística 4, message=FALSE, warning=FALSE}
+
+# Definir las bases y etiquetas
+datasets <- list(
+  list(data = train4, label = "Train4", ano_trim = "2022-III / 2022-IV", tipo = "Entrenamiento"),
+  list(data = test4, label = "Test4", ano_trim = "2023-I / 2024-III", tipo = "Test")
+)
+
+# Función para aplicar augment y ajustar las columnas
+apply_augment <- function(data, model, label, ano_trim, tipo) {
+  augment(model, new_data = data) %>%
+    select(-starts_with(".pred"), everything(), starts_with(".pred")) %>%
+    mutate(
+      .pred_class = fct_relevel(.pred_class, "Pobre", "No pobre"),
+      base = label,
+      ano_trim = ano_trim,
+      tipo = tipo
+    )
+}
+
+# Función para calcular métricas
+class_metrics <- metric_set(precision, recall,
+                       accuracy, f_meas)
+
+calculate_metrics <- function(data, label, ano_trim, tipo, model_name = "Logística") {
+  data %>%
+    class_metrics(truth = pobreza_dic, estimate = .pred_class, weights = PONDIH) %>%
+    bind_rows(roc_auc(data, truth = pobreza_dic, ".pred_Pobre")) %>%
+    add_column(base = label, .before = ".metric") %>%
+    add_column(modelo = model_name, .before = "base") %>% 
+    add_column(ano_trim = ano_trim, .before = "modelo") %>%
+    add_column(tipo = tipo, .before = "ano_trim")
+}
+
+# Aplicar augment y calcular métricas para todas las bases
+metricas <- map_dfr(datasets, ~ {
+  augmented_data <- apply_augment(.x$data, log_reg4, .x$label, .x$ano_trim, .x$tipo)
+  calculate_metrics(augmented_data, .x$label, .x$ano_trim, .x$tipo)
+})
+
+# Pivotar los resultados
+metricas_log4 <- metricas %>%
+  pivot_wider(names_from = ".metric", values_from = ".estimate")
+
+# Matriz de confusión
+matriz <- augment(log_reg4, new_data = train4) %>% 
+  select(-starts_with(".pred"), everything(), starts_with(".pred")) %>%
+  mutate(.pred_class = fct_relevel(.pred_class, "Pobre", "No pobre"))
+
+conf_mat(matriz, truth = pobreza_dic, estimate = .pred_class, case_weights = PONDIH) %>%
+  autoplot(type = "heatmap") +
+  labs(title = "Matriz de confusión en Train 2022-III / 2022-IV",
+       caption = "Fuente: elaboración propia en base a EPH")
+
+```
+
+
+```{r Evaluación Random Forest 1, message=FALSE, warning=FALSE}
+
+
+# Definir las bases y etiquetas
+datasets <- list(
+  list(data = train1, label = "Train1", ano_trim = "2016-III / 2016-IV", tipo = "Entrenamiento"),
+  list(data = test1, label = "Test1", ano_trim = "2017-I / 2018-II", tipo = "Test"))
+
+# Función para aplicar augment y ajustar las columnas
+apply_augment <- function(data, model, label, ano_trim, tipo) {
+  augment(model, new_data = data) %>%
+    select(-starts_with(".pred"), everything(), starts_with(".pred")) %>%
+    mutate(
+      .pred_class = fct_relevel(.pred_class, "Pobre", "No pobre"),
+      base = label,
+      ano_trim = ano_trim,
+      tipo = tipo
+    )
+}
+
+# Función para calcular métricas
+class_metrics <- metric_set(precision, recall,
+                       accuracy, f_meas)
+
+calculate_metrics <- function(data, label, ano_trim, tipo, model_name = "Random forest") {
+  data %>%
+    class_metrics(truth = pobreza_dic, estimate = .pred_class, weights = PONDIH) %>%
+    bind_rows(roc_auc(data, truth = pobreza_dic, ".pred_Pobre")) %>%
+    add_column(base = label, .before = ".metric") %>%
+    add_column(modelo = model_name, .before = "base") %>% 
+    add_column(ano_trim = ano_trim, .before = "modelo") %>%
+    add_column(tipo = tipo, .before = "ano_trim")
+}
+
+# Aplicar augment y calcular métricas para todas las bases
+metricas <- map_dfr(datasets, ~ {
+  augmented_data <- apply_augment(.x$data, tree_rf1, .x$label, .x$ano_trim, .x$tipo)
+  calculate_metrics(augmented_data, .x$label, .x$ano_trim, .x$tipo)
+})
+
+# Pivotar los resultados
+metricas_rf1 <- metricas %>%
+  pivot_wider(names_from = ".metric", values_from = ".estimate")
+
+
+# Matriz de confusión
+matriz1 <- augment(tree_rf1, new_data = train1) %>% 
+  select(-starts_with(".pred"), everything(), starts_with(".pred")) %>%
+  mutate(.pred_class = fct_relevel(.pred_class, "Pobre", "No pobre"))
+
+conf_mat(matriz1, truth = pobreza_dic, estimate = .pred_class, case_weights = PONDIH) %>%
+  autoplot(type = "heatmap") +
+    labs(title = "Matriz de confusión en Train 2016-III / 2016-IV",
+       caption = "Fuente: elaboración propia en base a EPH")
+
+```
+
+```{r Evaluación Random Forest 2, message=FALSE, warning=FALSE}
+
+# Definir las bases y etiquetas
+datasets <- list(
+  list(data = train2, label = "Train2", ano_trim = "2018-III / 2018-IV", tipo = "Entrenamiento"),
+  list(data = test2, label = "Test2", ano_trim = "2019-I / 2020-II", tipo = "Test")
+)
+
+# Función para aplicar augment y ajustar las columnas
+apply_augment <- function(data, model, label, ano_trim, tipo) {
+  augment(model, new_data = data) %>%
+    select(-starts_with(".pred"), everything(), starts_with(".pred")) %>%
+    mutate(
+      .pred_class = fct_relevel(.pred_class, "Pobre", "No pobre"),
+      base = label,
+      ano_trim = ano_trim,
+      tipo = tipo
+    )
+}
+
+# Función para calcular métricas
+class_metrics <- metric_set(precision, recall,
+                       accuracy, f_meas)
+
+calculate_metrics <- function(data, label, ano_trim, tipo, model_name = "Random forest") {
+  data %>%
+    class_metrics(truth = pobreza_dic, estimate = .pred_class, weights = PONDIH) %>%
+    bind_rows(roc_auc(data, truth = pobreza_dic, ".pred_Pobre")) %>%
+    add_column(base = label, .before = ".metric") %>%
+    add_column(modelo = model_name, .before = "base") %>% 
+    add_column(ano_trim = ano_trim, .before = "modelo") %>%
+    add_column(tipo = tipo, .before = "ano_trim")
+}
+
+# Aplicar augment y calcular métricas para todas las bases
+metricas <- map_dfr(datasets, ~ {
+  augmented_data <- apply_augment(.x$data, tree_rf2, .x$label, .x$ano_trim, .x$tipo)
+  calculate_metrics(augmented_data, .x$label, .x$ano_trim, .x$tipo)
+})
+
+# Pivotar los resultados
+metricas_rf2 <- metricas %>%
+  pivot_wider(names_from = ".metric", values_from = ".estimate")
+
+
+
+# Matriz de confusión
+matriz2 <- augment(tree_rf2, new_data = train2) %>% 
+  select(-starts_with(".pred"), everything(), starts_with(".pred")) %>%
+  mutate(.pred_class = fct_relevel(.pred_class, "Pobre", "No pobre"))
+
+conf_mat(matriz2, truth = pobreza_dic, estimate = .pred_class, case_weights = PONDIH) %>%
+  autoplot(type = "heatmap") +
+  labs(title = "Matriz de confusión en Train 2018-III / 2018-IV",
+       caption = "Fuente: elaboración propia en base a EPH")
+
+```
+
+```{r Evaluación Random Forest 3, message=FALSE, warning=FALSE}
+
+# Definir las bases y etiquetas
+datasets <- list(
+  list(data = train3, label = "Train3", ano_trim = "2020-III / 2020-IV", tipo = "Entrenamiento"),
+  list(data = test3, label = "Test3", ano_trim = "2021-I / 2022-II", tipo = "Test")
+)
+
+# Función para aplicar augment y ajustar las columnas
+apply_augment <- function(data, model, label, ano_trim, tipo) {
+  augment(model, new_data = data) %>%
+    select(-starts_with(".pred"), everything(), starts_with(".pred")) %>%
+    mutate(
+      .pred_class = fct_relevel(.pred_class, "Pobre", "No pobre"),
+      base = label,
+      ano_trim = ano_trim,
+      tipo = tipo
+    )
+}
+
+# Función para calcular métricas
+class_metrics <- metric_set(precision, recall,
+                       accuracy, f_meas)
+
+calculate_metrics <- function(data, label, ano_trim, tipo, model_name = "Random forest") {
+  data %>%
+    class_metrics(truth = pobreza_dic, estimate = .pred_class, weights = PONDIH) %>%
+    bind_rows(roc_auc(data, truth = pobreza_dic, ".pred_Pobre")) %>%
+    add_column(base = label, .before = ".metric") %>%
+    add_column(modelo = model_name, .before = "base") %>% 
+    add_column(ano_trim = ano_trim, .before = "modelo") %>%
+    add_column(tipo = tipo, .before = "ano_trim")
+}
+
+# Aplicar augment y calcular métricas para todas las bases
+metricas <- map_dfr(datasets, ~ {
+  augmented_data <- apply_augment(.x$data, tree_rf3, .x$label, .x$ano_trim, .x$tipo)
+  calculate_metrics(augmented_data, .x$label, .x$ano_trim, .x$tipo)
+})
+
+# Pivotar los resultados
+metricas_rf3 <- metricas %>%
+  pivot_wider(names_from = ".metric", values_from = ".estimate")
+
+
+
+# Matriz de confusión
+matriz3 <- augment(tree_rf3, new_data = train3) %>% 
+  select(-starts_with(".pred"), everything(), starts_with(".pred")) %>%
+  mutate(.pred_class = fct_relevel(.pred_class, "Pobre", "No pobre"))
+
+conf_mat(matriz3, truth = pobreza_dic, estimate = .pred_class, case_weights = PONDIH) %>%
+  autoplot(type = "heatmap") +
+  labs(title = "Matriz de confusión en Train 2020-III / 2020-IV",
+       caption = "Fuente: elaboración propia en base a EPH")
+
+```
+
+
+```{r Evaluación Random Forest 4, message=FALSE, warning=FALSE}
+
+# Definir las bases y etiquetas
+datasets <- list(
+  list(data = train4, label = "Train4", ano_trim = "2022-III / 2022-IV", tipo = "Entrenamiento"),
+  list(data = test4, label = "Test4", ano_trim = "2023-I / 2024-III", tipo = "Test")
+)
+
+# Función para aplicar augment y ajustar las columnas
+apply_augment <- function(data, model, label, ano_trim, tipo) {
+  augment(model, new_data = data) %>%
+    select(-starts_with(".pred"), everything(), starts_with(".pred")) %>%
+    mutate(
+      .pred_class = fct_relevel(.pred_class, "Pobre", "No pobre"),
+      base = label,
+      ano_trim = ano_trim,
+      tipo = tipo
+    )
+}
+
+# Función para calcular métricas
+class_metrics <- metric_set(precision, recall,
+                       accuracy, f_meas)
+
+calculate_metrics <- function(data, label, ano_trim, tipo, model_name = "Random forest") {
+  data %>%
+    class_metrics(truth = pobreza_dic, estimate = .pred_class, weights = PONDIH) %>%
+    bind_rows(roc_auc(data, truth = pobreza_dic, ".pred_Pobre")) %>%
+    add_column(base = label, .before = ".metric") %>%
+    add_column(modelo = model_name, .before = "base") %>% 
+    add_column(ano_trim = ano_trim, .before = "modelo") %>%
+    add_column(tipo = tipo, .before = "ano_trim")
+}
+
+# Aplicar augment y calcular métricas para todas las bases
+metricas <- map_dfr(datasets, ~ {
+  augmented_data <- apply_augment(.x$data, tree_rf4, .x$label, .x$ano_trim, .x$tipo)
+  calculate_metrics(augmented_data, .x$label, .x$ano_trim, .x$tipo)
+})
+
+# Pivotar los resultados
+metricas_rf4 <- metricas %>%
+  pivot_wider(names_from = ".metric", values_from = ".estimate")
+
+
+# Matriz de confusión
+matriz4 <- augment(tree_rf3, new_data = train4) %>% 
+  select(-starts_with(".pred"), everything(), starts_with(".pred")) %>%
+  mutate(.pred_class = fct_relevel(.pred_class, "Pobre", "No pobre"))
+
+conf_mat(matriz4, truth = pobreza_dic, estimate = .pred_class, case_weights = PONDIH) %>%
+  autoplot(type = "heatmap") +
+  labs(title = "Matriz de confusión en Train 2022-III / 2022-IV",
+       caption = "Fuente: elaboración propia en base a EPH")
+
+```
+
+
+```{r Comparación de modelos, message=FALSE, warning=FALSE}
+
+# Unir todas las métricas
+metricas_rf <- bind_rows(metricas_rf1, metricas_rf2, metricas_rf3, metricas_rf4)
+
+xlsx::write.xlsx(metricas_rf, "salidas/metricas_over.xlsx", sheetName = "Random forest")
+
+metricas_log <- bind_rows(metricas_log1, metricas_log2, metricas_log3, metricas_log4)
+
+xlsx::write.xlsx(metricas_log, "salidas/metricas_over.xlsx", sheetName = "Regresión logística", append = TRUE)
+
+metricas <- metricas_rf %>% 
+  add_row(metricas_log)
+
+metricas <- metricas %>% 
+  pivot_longer(cols = c(precision, recall, accuracy, f_meas, roc_auc), names_to = "Métrica", values_to = "Valor") %>% 
+  mutate(base = factor(base, levels = c("Train1", "Test1", "Train2", "Test2", "Train3", "Test3", "Train4", "Test4")))
+
+metricas %>% 
+  ggplot(aes(x = as.factor(base), y = Valor, fill = modelo, group = modelo, color = modelo)) +
+  geom_line() +
+  geom_point() +
+  labs(
+    title = "Evaluación de modelos según métricas",
+    color = "Modelo",
+    fill = "Modelo"
+  ) +
+  scale_color_d3() +
+  scale_fill_d3() +
+  theme(
+    plot.title = element_text(size = 14),
+    axis.text.x = element_text(angle = 45, hjust = 1, size = 9),
+    axis.text.y = element_text(size = 9),
+    legend.position = "bottom",
+    axis.title.y = element_blank(),
+    axis.title.x = element_blank(),
+    strip.text = element_text(size = 10)
+  ) +
+  facet_wrap(~Métrica)
+
+ggsave("salidas/metricas_over.png", width = 8, height = 5)
+```
+
+
+
+```{r Gráficos, message=FALSE, warning=FALSE}
+
+# Crear una lista con las matrices
+matrices <- list(matriz1 = matriz1, matriz2 = matriz2, matriz3 = matriz3, matriz4 = matriz4)
+
+# Función para calcular el umbral óptimo
+calcular_umbral <- function(matriz) {
+  roc_data <- roc_curve(matriz, truth = pobreza_dic, ".pred_Pobre")
+  
+  prevalence <- mean(matriz$pobreza_dic == "Pobre", na.rm = TRUE)
+  
+  optimal_threshold <- roc_data %>%
+    mutate(accuracy = (sensitivity * prevalence) + (specificity * (1 - prevalence))) %>%
+    filter(accuracy == max(accuracy)) %>%
+    pull(.threshold)
+  
+  return(optimal_threshold)
+}
+
+# Aplicar la función a todas las matrices
+umbrales <- tibble(
+  matriz = names(matrices),
+  umbral_optimo = map_dbl(matrices, calcular_umbral)
+)
+
+# Ver los resultados
+print(umbrales)
+
+
+# Gráfico de la curva ROC
+# Función para calcular la curva ROC y umbral óptimo
+calcular_roc_umbral <- function(matriz, nombre) {
+  roc_data <- roc_curve(matriz, truth = pobreza_dic, ".pred_Pobre") %>%
+    mutate(matriz = nombre)  # Agregar nombre de la matriz
+  
+  prevalence <- mean(matriz$pobreza_dic == "Pobre", na.rm = TRUE)
+  
+  optimal_threshold <- roc_data %>%
+    mutate(accuracy = (sensitivity * prevalence) + (specificity * (1 - prevalence))) %>%
+    filter(accuracy == max(accuracy)) %>%
+    pull(.threshold)
+  
+  roc_data <- roc_data %>%
+    mutate(optimal = ifelse(.threshold == optimal_threshold, TRUE, FALSE))  # Marcar el umbral
+  
+  return(roc_data)
+}
+
+# Aplicar la función a todas las matrices y unir en un solo dataframe
+roc_data_all <- map2_dfr(matrices, names(matrices), calcular_roc_umbral)
+
+# Gráfico de todas las curvas ROC con los umbrales óptimos
+ggplot(roc_data_all, aes(x = 1 - specificity, y = sensitivity, color = matriz)) +
+  geom_line(size = 1) +
+  geom_abline(linetype = "dashed", color = "gray") +  # Línea de referencia
+  geom_point(data = filter(roc_data_all, optimal),
+             aes(x = 1 - specificity, y = sensitivity),
+             color = "red", size = 3) +  # Puntos de umbrales óptimos
+  labs(title = "Curvas ROC con Umbrales Óptimos",
+       x = "1 - Especificidad (FPR)",
+       y = "Sensibilidad (TPR)",
+       color = "Matriz") +
+  theme_minimal()
+
+```
