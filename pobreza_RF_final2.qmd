@@ -51,10 +51,10 @@ rm(eph_h)
 eph <- eph %>% 
   mutate(semestre = case_when(TRIMESTRE <= 2 ~ 1,
                               TRIMESTRE > 2 ~ 2),
-         trim = case_when(TRIMESTRE == 1 ~ "I",
-                          TRIMESTRE == 2 ~ "II",
-                          TRIMESTRE == 3 ~ "III",
-                          TRIMESTRE == 4 ~ "IV"),
+         trim = case_when(TRIMESTRE == 1 ~ "1",
+                          TRIMESTRE == 2 ~ "2",
+                          TRIMESTRE == 3 ~ "3",
+                          TRIMESTRE == 4 ~ "4"),
          ano2 = str_sub(as.character(ANO4), 3, 4))
 
 eph$ano_trim <- paste(as.character(eph$ANO4), as.character(eph$trim), sep = "-")
@@ -671,13 +671,11 @@ extract_fit_parsnip(tree_rf1) %>%
   vip::vip(geom = "col", num_features = 22) + 
   labs(title = "Variables importantes del modelo de entrenamiento de 2016 (III-IV) \n(método permutación)",
        caption = "Fuente: elaboración propia en base a EPH-INDEC",
-       y = "Importancia") %>% 
-  theme(
-    axis.text.y = element_text(size = 10),
-    axis.text.x = element_text(size = 10),
-  )
+       y = "Importancia") + 
+  theme(axis.text.y = element_text(size = 10),
+    axis.text.x = element_text(size = 10))
 
-ggsave("salidas/rf_train1.png", width = 8, height = 5)
+ggsave("salidas/rf_train1.png", width = 7, height = 5)
 
 saveRDS(tree_rf1, "modelos entrenados/tree_rf1.rds")
 
@@ -755,11 +753,10 @@ extract_fit_parsnip(tree_rf2) %>%
        y = "Importancia") +
   theme(
     axis.text.y = element_text(size = 10),
-    axis.text.x = element_text(size = 10),
-  )
+    axis.text.x = element_text(size = 10))
 
 
-ggsave("salidas/rf_train2.png", width = 8, height = 5)
+ggsave("salidas/rf_train2.png", width = 7, height = 5)
 
 saveRDS(tree_rf2, "modelos entrenados/tree_rf2.rds")
 
@@ -837,10 +834,10 @@ extract_fit_parsnip(tree_rf3) %>%
        y = "Importancia") +
   theme(
     axis.text.y = element_text(size = 10),
-    axis.text.x = element_text(size = 10),
+    axis.text.x = element_text(size = 10)
   )
 
-ggsave("salidas/rf_train3.png", width = 8, height = 5)
+ggsave("salidas/rf_train3.png", width = 7, height = 5)
 
 saveRDS(tree_rf3, "modelos entrenados/tree_rf3.rds")
 
@@ -914,14 +911,14 @@ extract_fit_parsnip(tree_rf4)$fit$prediction.error
 extract_fit_parsnip(tree_rf4) %>%
   vip::vip(geom = "col", num_features = 22) + 
   labs(title = "Variables importantes del modelo de entrenamiento de 2022 (III-IV) \n(método permutación)",
-       caption = "Fuente: elaboración propia en base a EPH 2023-IV y 2024-I",
+       caption = "Fuente: elaboración propia en base a EPH-INDEC",
        y = "Importancia") +
   theme(
     axis.text.y = element_text(size = 10),
-    axis.text.x = element_text(size = 10),
+    axis.text.x = element_text(size = 10)
   )
 
-ggsave("salidas/rf_train4.png", width = 8, height = 5)
+ggsave("salidas/rf_train4.png", width = 7, height = 5)
 
 saveRDS(tree_rf4, "modelos entrenados/tree_rf4.rds")
 
@@ -1422,7 +1419,8 @@ metricas %>%
   labs(
     title = "Evaluación de modelos según métricas",
     color = "Modelo",
-    fill = "Modelo"
+    fill = "Modelo",
+    caption = "Elaboración propia en base a EPH-INDEC"
   ) +
   scale_color_d3() +
   scale_fill_d3() +
@@ -1437,7 +1435,7 @@ metricas %>%
   ) +
   facet_wrap(~Métrica)
 
-ggsave("salidas/metricas_over.png", width = 8, height = 5)
+ggsave("salidas/metricas_over.png", width = 7, height = 5)
 ```
 
 

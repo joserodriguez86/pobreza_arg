@@ -188,14 +188,14 @@ eph <- eph %>%
     distancia_pobreza > 0 ~ "No pobre",
     TRUE ~ NA_character_), levels = c("-100%", "-90%", "-80%", "-70%", "-60%", "-50%", "-40%", "-30%", "-20%", "-10%", "No pobre"))) %>% 
   mutate(distancia_pobreza3 = factor(case_when(
-    distancia_pobreza <= -.5 & distancia_pobreza > -1 ~ "-100%/-50%",
+    distancia_pobreza <= -.5 & distancia_pobreza >= -1 ~ "-100%/-50%",
     distancia_pobreza <= -.2 & distancia_pobreza > -.5 ~ "-49%/-20%",
     distancia_pobreza < 0 & distancia_pobreza > -.2 ~ "-19%/0%",
-    distancia_pobreza >= 0 & distancia_pobreza <=.2 ~ "1%/20%",
-    distancia_pobreza > .2 & distancia_pobreza <=.5 ~ "11%/50%",
-    distancia_pobreza > .5 & distancia_pobreza <=1 ~ "51%/100%",
+    distancia_pobreza >= 0 & distancia_pobreza <= .2 ~ "1%/20%",
+    distancia_pobreza > .2 & distancia_pobreza <= .5 ~ "21%/50%",
+    distancia_pobreza > .5 & distancia_pobreza <= 1 ~ "51%/100%",
     distancia_pobreza > 1 ~ "Más de 100%",
-    TRUE ~ NA_character_), levels = c("-100%/-50%", "-49%/-20%", "-19%/0%", "1%/20%", "11/50%", "51%/100%", "Más de 100%")))
+    TRUE ~ NA_character_), levels = c("-100%/-50%", "-49%/-20%", "-19%/0%", "1%/20%", "21%/50%", "51%/100%", "Más de 100%")))
 
 
 eph <- eph %>% 
@@ -447,13 +447,14 @@ pobreza %>%
         plot.caption = element_text(size = 9, hjust = 1),
         panel.grid = element_line(size = .2),
         strip.text = element_text(face = "bold"),
-        legend.background = element_blank()) +
+        legend.background = element_blank(),
+        legend.position = "bottom") +
   scale_color_d3(labels=c("Indigencia", "Pobreza")) +
   scale_y_continuous(breaks = seq(0, .6, by = 0.05), limits = c(0, .6), 
                      labels = scales::percent_format(accuracy = 1L))
 
 
-ggsave("salidas/pobreza_evolucion_trimestres.png", dpi = 300, width = 8, height = 5)
+ggsave("salidas/pobreza_evolucion_trimestres.png", dpi = 300, width = 7, height = 5)
 
 ```
 
@@ -504,7 +505,7 @@ ggsave("salidas/pobreza_relativa_evolucion.png", dpi = 300, width = 7, height = 
 ```{r Distancia pobreza, message=FALSE, warning=FALSE, echo=FALSE}
 
 eph %>% 
-  filter(!is.na(distancia_pobreza3),TRIMESTRE == 1 | TRIMESTRE == 3) %>% 
+  filter(TRIMESTRE == 1 | TRIMESTRE == 3, !is.na(distancia_pobreza3)) %>% 
   group_by(ano_trim, distancia_pobreza3) %>%
   tally(PONDIH) %>%
   group_by(ano_trim) %>%
@@ -513,7 +514,7 @@ eph %>%
   geom_bar(stat="identity", position="fill") +
   geom_text(aes(label = scales::percent(n, accuracy = 0.1, suffix = "")),
             color = "white",
-            position = position_fill(vjust = 0.5), size = 3.5) +
+            position = position_fill(vjust = 0.5), size = 3) +
   labs(
     title = "Distancias del ITF a la canasta básica de pobreza",
     subtitle = "Argentina urbana, 2016-2024 (1er y 3er trimestre)",
@@ -523,7 +524,7 @@ eph %>%
                        end = .87) +
   scale_y_continuous(labels = scales::percent_format(accuracy = 1L)) +
   labs(fill = "Distancia a la CBT") +
-  theme(legend.text = element_text(size = 10),
+  theme(legend.text = element_text(size = 9),
         axis.title.x = element_blank(),
         axis.title.y = element_blank(),
         axis.text.y = element_text(size = 10),
@@ -533,7 +534,7 @@ eph %>%
         strip.text = element_text(face = "bold"),
         legend.background = element_blank()) 
 
-ggsave("salidas/distancias_pobreza.png", dpi = 300, width = 8, height = 5)
+ggsave("salidas/distancias_pobreza.png", dpi = 300, width = 7, height = 5)
 
 ```
 
@@ -644,7 +645,7 @@ graf$cobhe_f <- factor(graf$cobhe_f, levels = c('Propietarios y directivos >5',
 
 graf %>% 
   ggplot(mapping = aes(x = cobhe_f, y = porcentaje_pobreza, fill = cobhe_f == "Promedio")) +
-  geom_col() +
+  geom_col(alpha = .7) +
   geom_text(aes(label = scales::percent(porcentaje_pobreza, accuracy = 0.1)), 
             position = position_stack(0.6),
             size = 2.5) +
@@ -655,19 +656,20 @@ graf %>%
        caption = "Fuente: elaboración propia en base a EPH-INDEC.") +
   theme(axis.title.x = element_blank(),
         axis.title.y = element_blank(),
-        axis.text.y = element_text(size = 8),
-        axis.text.x = element_text(size = 8),
+        axis.text.y = element_text(size = 7),
+        axis.text.x = element_text(size = 7),
         plot.caption = element_text(size = 9, hjust = 1),
+        plot.subtitle = element_text(size = 10),
         panel.grid = element_line(size = .2),
         legend.position = "none") +
   scale_x_discrete(limits = rev(levels(graf$cobhe_f)),
-                   labels = function(x) str_wrap(x, width = 35)) +
+                   labels = function(x) str_wrap(x, width = 30)) +
   scale_y_continuous(labels= scales::percent_format(accuracy = 1L), breaks=seq(0, 6, 0.1)) + 
   coord_flip() +
   facet_wrap(~ano_trim)
 
 
-ggsave("salidas/pobreza_clase.png", dpi = 300, width = 8, height = 5)
+ggsave("salidas/pobreza_clase.png", dpi = 300, width = 7, height = 5)
 
 graf %>%
   pivot_wider(names_from = ano_trim, values_from = porcentaje_pobreza) %>% 
@@ -689,13 +691,57 @@ graf %>%
         panel.grid = element_line(size = .2),
         legend.position = "none") +
   scale_x_discrete(limits = rev(levels(graf$cobhe_f)),
-                   labels = function(x) str_wrap(x, width = 35)) +
+                   labels = function(x) str_wrap(x, width = 25)) +
   scale_y_continuous(labels= scales::percent_format(accuracy = 1L), breaks=seq(0, 6, 0.1)) + 
   coord_flip()
 
-ggsave("salidas/pobreza_clase_diferencia.png", dpi = 300, width = 8, height = 5)
-  
+ggsave("salidas/pobreza_clase_diferencia.png", dpi = 300, width = 7, height = 5)
+
+# No manuales >5 según tipo de ocupación
+graf <- eph %>%
+  filter(CH06 >= 18, ESTADO == 1, cobhe == 4, !is.na(ocupacion_f)) %>% 
+  filter(ANO4 %in% c(2023, 2024)) %>%
+  filter(ano_trim != "2023-I") %>% 
+  group_by(ano_trim, ocupacion_f) %>% 
+  summarise(porcentaje_pobreza = weighted.mean(pobreza_dic, PONDIH, na.rm = T)) 
+
+graf_prom <- eph %>% 
+  filter(CH06 >= 18, ESTADO == 1, cobhe == 4, !is.na(ocupacion_f)) %>% 
+  filter(ANO4 %in% c(2023, 2024)) %>%
+  filter(ano_trim != "2023-I") %>% 
+  group_by(ano_trim) %>% 
+  summarise(porcentaje_pobreza = weighted.mean(pobreza_dic, PONDIH, na.rm = T)) %>% 
+  mutate(ocupacion_f = "Promedio")
+
+graf <- bind_rows(graf, graf_prom)
+
+
+graf %>%
+  pivot_wider(names_from = ano_trim, values_from = porcentaje_pobreza) %>% 
+  mutate(diferencia = abs((`2024-III` - `2024-I`)/`2024-I`)) %>% 
+  select(ocupacion_f, diferencia) %>% 
+  ggplot(mapping = aes(x = ocupacion_f, y = diferencia)) +
+  geom_col(alpha = .7) +
+  geom_text(aes(label = scales::percent(diferencia, accuracy = 0.1)), 
+            position = position_stack(0.9),
+            size = 3) +
+  labs(title = "Disminución porcentual (1er y 3er trimestre) de la pobreza \npor clase social",
+       subtitle = "Argentina urbana, 2024. Población ocupada mayor a 18 años.",
+       caption = "Fuente: elaboración propia en base a EPH-INDEC.") +
+  theme(axis.title.x = element_blank(),
+        axis.title.y = element_blank(),
+        axis.text.y = element_text(size = 10),
+        axis.text.x = element_text(size = 8.5),
+        plot.caption = element_text(size = 9, hjust = 1),
+        panel.grid = element_line(size = .2),
+        legend.position = "none") +
+  scale_x_discrete(limits = rev(levels(graf$cobhe_f)),
+                   labels = function(x) str_wrap(x, width = 35)) +
+  scale_y_continuous(labels= scales::percent_format(accuracy = 1L), breaks=seq(0, 6, 0.1)) + 
+  coord_flip()
 ```
+
+
 
 
 ## Análisis multidimensional de la pobreza
@@ -703,7 +749,7 @@ ggsave("salidas/pobreza_clase_diferencia.png", dpi = 300, width = 8, height = 5)
 ### Variables
 
 ```{r Nube de variables, message=FALSE, warning=FALSE, echo=FALSE}
-
+#2016-II
 var2016 <- eph %>% 
   filter(!is.na(cobhe_f) & CH06 >= 18 & ano_trim == "2016-II" & !is.na(pobreza_dic), ESTADO == 1) %>%
   select(nivel_educativo, empleos_cant, intensi, rama, precariedad, cobhe_f, decil_ipcf, pobreza3, PONDIH) %>%
@@ -747,22 +793,23 @@ ggcloud_variables(mca2016, vlab = F, shapes = T, shapesize = 1.5, force = 2,
 ggsave(filename = "salidas/acm2016.png", dpi = 300, type = "cairo", width = 8, height = 5)
 
 
-
-var2024 <- eph %>% 
-  filter(!is.na(cobhe_f) & CH06 >= 18 & ano_trim == "2024-II" & !is.na(pobreza_dic), ESTADO == 1) %>%
+#2024-I
+var2024_1 <- eph %>% 
+  filter(!is.na(cobhe_f) & CH06 >= 18 & ano_trim == "2024-I" & !is.na(pobreza_dic), ESTADO == 1) %>%
   select(nivel_educativo, empleos_cant, intensi, rama, precariedad, cobhe_f, decil_ipcf, pobreza3, PONDIH) %>% 
   mutate(pobreza3 = factor(pobreza3, levels = c("Indigente", "Pobre", "No pobre")))
 
-mca2024 <- speMCA(var2024[,1:8], ncp = 2, row.w = var2024$PONDIH)
+mca2024_1 <- speMCA(var2024_1[,1:8], ncp = 2, row.w = var2024_1$PONDIH)
 
-mca2024 <- flip.mca(mca2024, dim = 1)
+mca2024_1 <- flip.mca(mca2024_1, dim = 1)
+mca2024_1 <- flip.mca(mca2024_1, dim = 2)
 
-modif.rate(mca2024)$modif 
+modif.rate(mca2024_1)$modif 
 
-contrib2024_1 <- tabcontrib(mca2024, dim = 1, best = T)
-contrib2024_2 <- tabcontrib(mca2024, dim = 2, best = T)
+contrib2024_1 <- tabcontrib(mca2024_1, dim = 1, best = T)
+contrib2024_2<- tabcontrib(mca2024_1, dim = 2, best = T)
 
-ggcloud_variables(mca2024, vlab = F, shapes = T, shapesize = 1.5, force = 2,
+ggcloud_variables(mca2024_1, vlab = F, shapes = T, shapesize = 1.5, force = 2,
                   textsize = 3) +
   scale_color_d3(labels= str_wrap(c("Nivel educativo",
                                     "Cantidad de empleos",
@@ -786,7 +833,51 @@ ggcloud_variables(mca2024, vlab = F, shapes = T, shapesize = 1.5, force = 2,
         plot.caption = element_text(size = 9, hjust = 1)) +
   guides(shape = "none")
 
-ggsave(filename = "salidas/acm2024.png", dpi = 300, type = "cairo", width = 8, height = 5)
+ggsave(filename = "salidas/acm2024_1.png", dpi = 300, type = "cairo", width = 8, height = 5)
+
+
+#2024-III
+var2024_3 <- eph %>% 
+  filter(!is.na(cobhe_f) & CH06 >= 18 & ano_trim == "2024-III" & !is.na(pobreza_dic), ESTADO == 1) %>%
+  select(nivel_educativo, empleos_cant, intensi, rama, precariedad, cobhe_f, decil_ipcf, pobreza3, PONDIH) %>% 
+  mutate(pobreza3 = factor(pobreza3, levels = c("Indigente", "Pobre", "No pobre")))
+
+mca2024_3 <- speMCA(var2024_3[,1:8], ncp = 2, row.w = var2024_3$PONDIH)
+
+mca2024_3 <- flip.mca(mca2024_3, dim = 1)
+mca2024_3 <- flip.mca(mca2024_3, dim = 2)
+
+modif.rate(mca2024_3)$modif 
+
+contrib2024_1 <- tabcontrib(mca2024_3, dim = 1, best = T)
+contrib2024_2 <- tabcontrib(mca2024_3, dim = 2, best = T)
+
+ggcloud_variables(mca2024_3, vlab = F, shapes = T, shapesize = 1.5, force = 2,
+                  textsize = 3) +
+  scale_color_d3(labels= str_wrap(c("Nivel educativo",
+                                    "Cantidad de empleos",
+                                    "Intensidad laboral", 
+                                    "Rama de actividad", 
+                                    "Precariedad laboral", 
+                                    "Clase social", 
+                                    "Decil IPCF", 
+                                    "Pobreza"))) +
+  # labs(title = "Análisis de correspondencias múltiples", 
+  #      subtitle = "Argentina urbana 2024 (primer semestre). Población ocupada mayor a 18 años",
+  #      caption = "Fuente: elaboración propia en base a EPH-INDEC.") +
+  theme(legend.position = "bottom",
+        legend.title = element_blank(),
+        legend.text = element_text(size = 8),
+        legend.key.height = unit(.1, "cm"),
+        axis.title.x = element_text(size = 9),
+        axis.title.y = element_text(size = 9),
+        axis.text.y = element_text(size = 8),
+        axis.text.x = element_text(size = 8),
+        plot.caption = element_text(size = 9, hjust = 1)) +
+  guides(shape = "none")
+
+ggsave(filename = "salidas/acm2024_3.png", dpi = 300, type = "cairo", width = 8, height = 5)
+
 
 ```
 
@@ -795,12 +886,10 @@ ggsave(filename = "salidas/acm2024.png", dpi = 300, type = "cairo", width = 8, h
 
 ```{r Nube de individuos, message=FALSE, warning=FALSE, echo=FALSE}
 cloud_ind_2016 <- ggcloud_indiv(mca2016, col = "lightgrey")
-cloud_ind_2016 <- 
-
 
 cloud_ind_2016 <- ggadd_kellipses(cloud_ind_2016, mca2016, var2016$pobreza3, label = FALSE) +
   scale_color_d3() +
-  labs(title = "2016") +
+  labs(title = "2016-II") +
   theme(legend.position = "right",
         legend.title = element_blank(),
         legend.text = element_text(size = 9),
@@ -812,13 +901,31 @@ cloud_ind_2016 <- ggadd_kellipses(cloud_ind_2016, mca2016, var2016$pobreza3, lab
   guides(color = guide_legend(override.aes = list(size = 2)))
 
 ggsave(cloud_ind_2016, filename = "salidas/elipsis_2016.png", 
-       dpi = 300, type = "cairo", width = 8, height = 5)
+       dpi = 300, type = "cairo", width = 6, height = 5)
 
 
-cloud_ind_2024 <- ggcloud_indiv(mca2024, col = "lightgrey")
-cloud_ind_2024 <- ggadd_kellipses(cloud_ind_2024, mca2024, var2024$pobreza3, label = FALSE) +
+cloud_ind_2024_1 <- ggcloud_indiv(mca2024_1, col = "lightgrey")
+cloud_ind_2024_1 <- ggadd_kellipses(cloud_ind_2024_1, mca2024_1, var2024_1$pobreza3, label = FALSE) +
   scale_color_d3() +
-  labs(title = "2024") +
+  labs(title = "2024-I") +
+  theme(legend.position = "right",
+        legend.title = element_blank(),
+        legend.text = element_text(size = 8),
+        axis.title.x = element_text(size = 9),
+        axis.title.y = element_text(size = 9),
+        axis.text.y = element_text(size = 8),
+        axis.text.x = element_text(size = 8),
+        plot.caption = element_text(size = 9, hjust = 1)) +
+  guides(color = guide_legend(override.aes = list(size = 2)))
+
+ggsave(cloud_ind_2024_1, filename = "salidas/elipsis_2024_1.png", 
+       dpi = 300, type = "cairo", width = 6, height = 5)
+
+
+cloud_ind_2024_3 <- ggcloud_indiv(mca2024_3, col = "lightgrey")
+cloud_ind_2024_3 <- ggadd_kellipses(cloud_ind_2024_3, mca2024_3, var2024_3$pobreza3, label = FALSE) +
+  scale_color_d3() +
+  labs(title = "2024-III") +
   theme(legend.position = "right",
         legend.title = element_blank(),
         legend.text = element_text(size = 9),
@@ -829,16 +936,19 @@ cloud_ind_2024 <- ggadd_kellipses(cloud_ind_2024, mca2024, var2024$pobreza3, lab
         plot.caption = element_text(size = 9, hjust = 1)) +
   guides(color = guide_legend(override.aes = list(size = 2)))
 
-ggsave(cloud_ind_2024, filename = "salidas/elipsis_2024.png", 
-       dpi = 300, type = "cairo", width = 8, height = 5)
+ggsave(cloud_ind_2024_3, filename = "salidas/elipsis_2024_3.png", 
+       dpi = 300, type = "cairo", width = 6, height = 5)
+
+
+
 
 elipsis <- cloud_ind_2016 + theme(legend.position = "none") | 
-  cloud_ind_2024 + theme(legend.position = "none") & 
-  plot_layout(guides = 'collect') &
-  theme(legend.position = "bottom") 
+  cloud_ind_2024_1 + theme(legend.position = "bottom") | 
+  cloud_ind_2024_3 + theme(legend.position = "none") + 
+  plot_layout(guides = 'collect')
 
-ggsave(filename = "salidas/elipsis_unidas.png", 
-       dpi = 300, type = "cairo", width = 8, height = 5)
+ggsave(elipsis, filename = "salidas/elipsis_unidas.png", 
+       dpi = 300, type = "cairo", width = 10, height = 5)
 
 
 ```

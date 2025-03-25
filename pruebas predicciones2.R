@@ -7,6 +7,11 @@ tree_rf2 <- readRDS("modelos entrenados/tree_rf2.rds")
 tree_rf3 <- readRDS("modelos entrenados/tree_rf3.rds")
 tree_rf4 <- readRDS("modelos entrenados/tree_rf4.rds")
 
+log_reg1 <- readRDS("modelos entrenados/log_reg1.rds")
+log_reg2 <- readRDS("modelos entrenados/log_reg2.rds")
+log_reg3 <- readRDS("modelos entrenados/log_reg3.rds")
+log_reg4 <- readRDS("modelos entrenados/log_reg4.rds")
+
 ##Predicción según modelos--------
 
 train1 <- augment(tree_rf1, new_data = train1)
@@ -92,7 +97,7 @@ tabla <- tabla %>%
 tabla %>% 
   ggplot(mapping = aes(x = as.character(ano_trim), y = prop, fill = tipo, colour = tipo,
                        group = tipo)) +
-  geom_line(data = filter(tabla, tipo == "prop.real"), size = .7) +
+  geom_line(data = filter(tabla, tipo == "prop.real"), size = .6) +
   geom_line(data = filter(tabla, tipo == "prop.pred"), size = .7) +
   geom_point(data = filter(tabla, tipo_base %in% c("train1", "train2", "train3",
                                                      "train4") &
@@ -100,7 +105,7 @@ tabla %>%
   geom_point(data = filter(tabla, !(tipo_base %in% c("train1", "train2", "train3",
                                                      "train4")) &
                              tipo == "prop.pred"), size = 1.5) +
-  labs(title = "Evolucion de la población bajo la línea de pobreza real y predicha",
+  labs(title = "Evolucion de los hogares bajo la línea de pobreza real y predicha",
        subtitle = "Argentina urbana, 2016-2024 (trimestres). Hogares con jefe/a ocupado",
        caption = "Fuente: elaboración propia en base a EPH-INDEC.",
        fill = "Tipo",
@@ -112,16 +117,17 @@ tabla %>%
         legend.key.height=unit(1, "cm"),
         axis.title.x = element_blank(),
         axis.title.y = element_blank(),
-        axis.text.y = element_text(size = 9),
-        axis.text.x = element_text(size = 9, angle = 45, hjust = 1),
+        axis.text.y = element_text(size = 8),
+        axis.text.x = element_text(size = 8, angle = 45, hjust = 1),
         plot.caption = element_text(size = 9, hjust = 1),
         panel.grid = element_line(size = .2),
         strip.text = element_text(face = "bold"),
-        legend.background = element_blank()) +
+        legend.background = element_blank(),
+        legend.position = "bottom") +
   scale_color_d3(labels=c("Pobreza predicha", "Pobreza real")) +
   scale_fill_d3(labels=c("Pobreza predicha", "Pobreza real")) +
   scale_y_continuous(breaks = seq(.1, .35, by = 0.03), limits = c(.1, .35), 
                      labels = scales::percent_format(accuracy = 1L))
 
-ggsave("salidas/evolucion_pobreza_predicha.png", width = 8, height = 6, dpi = 300)
+ggsave("salidas/evolucion_pobreza_predicha.png", width = 7, height = 5, dpi = 300)
   
