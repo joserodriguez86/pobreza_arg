@@ -51,10 +51,10 @@ rm(eph_h)
 eph <- eph %>% 
   mutate(semestre = case_when(TRIMESTRE <= 2 ~ 1,
                               TRIMESTRE > 2 ~ 2),
-         trim = case_when(TRIMESTRE == 1 ~ "1",
-                          TRIMESTRE == 2 ~ "2",
-                          TRIMESTRE == 3 ~ "3",
-                          TRIMESTRE == 4 ~ "4"),
+         trim = case_when(TRIMESTRE == 1 ~ "I",
+                          TRIMESTRE == 2 ~ "II",
+                          TRIMESTRE == 3 ~ "III",
+                          TRIMESTRE == 4 ~ "IV"),
          ano2 = str_sub(as.character(ANO4), 3, 4))
 
 eph$ano_trim <- paste(as.character(eph$ANO4), as.character(eph$trim), sep = "-")
