@@ -21,7 +21,7 @@ format:
 ```{r Librerías y bases, message=FALSE, warning=FALSE, echo=FALSE}
 
 rm(list = ls())
-pacman::p_load(tidyverse, eph, ggsci, flextable, ggrepel, GDAtools, plotly, patchwork, spatstat, lubridate, ggalluvial)
+pacman::p_load(tidyverse, eph, ggsci, flextable, ggrepel, GDAtools, plotly, patchwork, spatstat, lubridate, ggalluvial, jtools)
 
 eph <- readRDS("C:/Users/josed/OneDrive/Bases/EPH/eph_individual.RDS")
 eph_hogar <- readRDS("C:/Users/josed/OneDrive/Bases/EPH/eph_hogar.RDS")
@@ -1754,39 +1754,63 @@ ggsave("salidas/ingresos_rama2.png", dpi = 300, width = 8, height = 5)
 ## Estrategias del hogar
 
 ```{r estrategias, message=FALSE, warning=FALSE, echo=FALSE}
-tabla <- eph_hogar %>%
-  group_by(ano_trim, V13) %>% 
-  tally(V13) %>% 
-  group_by(ano_trim) %>%
+  |tabla1 <- eph_hogar %>%
+  group_by(ANO4, V13) %>% 
+  tally(PONDERA) %>% 
+  group_by(ANO4) %>%
   mutate(ahorro = n / sum(n)) %>% 
   filter(V13 == 1) %>% 
-  select(-n)
+  select(ANO4, ahorro)
+
+tabla2 <- eph_hogar %>%
+  group_by(ANO4, V14) %>% 
+  tally(PONDERA) %>% 
+  group_by(ANO4) %>%
+  mutate(prestamo_f = n / sum(n)) %>% 
+  filter(V14 == 1) %>% 
+  select(ANO4, prestamo_f)
+
+tabla3 <- eph_hogar %>%
+  group_by(ANO4, V15) %>% 
+  tally(PONDERA) %>% 
+  group_by(ANO4) %>%
+  mutate(prestamo_b = n / sum(n)) %>% 
+  filter(V15 == 1) %>% 
+  select(ANO4, prestamo_b)
+
+tabla <- tabla1 %>% 
+  left_join(tabla2, by = "ANO4") %>% 
+  left_join(tabla3, by = "ANO4") %>% 
+  pivot_longer(cols = c(ahorro, prestamo_f, prestamo_b), 
+               names_to = "estrategia", values_to = "n")
   
 tabla %>% 
-  ggplot(aes(x = ano_trim, y = ahorro, group = 1)) +
+  ggplot(aes(x = as.character(ANO4), y = n, color = estrategia, group = estrategia)) +
   geom_line(size = .7) +
   geom_point(size = 1.5) +
-  geom_text(data = . %>% filter(ano_trim %in% c("2024-I", "2020-II")),
-            aes(label = scales::percent(ahorro, accuracy = 0.1)), 
+  geom_text(data = . %>% filter(ANO4 %in% c("2016", "2024")),
+            aes(label = scales::percent(n, accuracy = 0.1)), 
             size = 3,
-            nudge_y = .01) +
-  labs(title = "Utilización de ahorros del hogar para vivir",
-       subtitle = "Argentina urbana, 2016-2024 (trimestres).",
+            nudge_y = .02) +
+  labs(title = "Estrategias económicas familiares",
+       subtitle = "Argentina urbana, 2016-2024 (Anual).",
        caption = "Fuente: elaboración propia en base a EPH-INDEC.") +
   theme(plot.title = element_text(size = 12),
         plot.subtitle = element_text(size = 10),
         legend.title = element_blank(),
         legend.text = element_text(size = 9),
+        legend.position = "bottom",
         legend.key.height=unit(1, "cm"),
         axis.title.x = element_blank(),
         axis.title.y = element_blank(),
         axis.text.y = element_text(size = 10),
-        axis.text.x = element_text(size = 10, angle = 45, hjust = 1),
+        axis.text.x = element_text(size = 10),
         plot.caption = element_text(size = 9, hjust = 1),
         panel.grid = element_line(size = .2),
         strip.text = element_text(face = "bold"),
         legend.background = element_blank()) +
-  scale_y_continuous(breaks = seq(0.1, .25, by = 0.05), limits = c(0.1, .25), 
+  scale_color_d3(labels = function(x) str_wrap(c("Ahorros familiares", "Préstamos bancarios / financieros", "Préstamos familiares / amigos"), width = 25)) +
+  scale_y_continuous(breaks = seq(0, .40, by = 0.05), limits = c(0, .40), 
                      labels = scales::percent_format(accuracy = 1L))
 
 ggsave("salidas/estrategias_ahorro.png", dpi = 300, width = 8, height = 5)
@@ -2015,7 +2039,7 @@ pool20242_1 <- pool %>%
          ocupados_dif = ocupados_t1 - ocupados,
          horas_dif = horas_t1 - horas,
          cobhe_f_t1 = relevel(cobhe_f_t1, ref = "Cuenta propia no calificados"),
-         intensi_t1 = relevel(intensi_t1, ref = "Subocupados"),
+         intensi_t1 = relevel(INTENSI_t1, ref = "Subocupados"),
          informal_t1 = relevel(informal_t1, ref = "Informal"),
          rama2_rec = fct_lump(rama2_t1, n = 10))
 
@@ -2027,7 +2051,7 @@ pool20242_2 <- pool %>%
          ocupados_dif = ocupados_t1 - ocupados,
          horas_dif = horas_t1 - horas,
          cobhe_f = relevel(cobhe_f, ref = "Cuenta propia no calificados"),
-         intensi = relevel(intensi, ref = "Subocupados"),
+         intensi = relevel(INTENSI, ref = "Subocupados"),
          informal = relevel(informal, ref = "Informal"))
   
 
@@ -2039,14 +2063,14 @@ modelo2 <- glm(pobreza_q1 ~ sector + rama2 + ocupados_dif + horas_dif + informal
 
 
 
-export_summs(modelo1, exp = T, stars = c(`***` = 0.001, `**` = 0.01, `*` = 0.05, `+` = 0.1),
+export_summs(modelo2, exp = T, stars = c(`***` = 0.001, `**` = 0.01, `*` = 0.05, `+` = 0.1),
                      error_pos = "same", scale = T)
 
 
 ```
 
 
-```{r Análisis de regresión multinomial, message=FALSE, warning=FALSE, echo=FALSE}
+```{r Análisis de regresión multinomial salida, message=FALSE, warning=FALSE, echo=FALSE}
 library(nnet)
 library(huxtable)
 
@@ -2064,7 +2088,7 @@ pool_trans <- pool %>%
          ocupados_dif = ocupados_t1 - ocupados,
          horas_dif = horas_t1 - horas,
          cobhe_f = relevel(cobhe_f, ref = "Cuenta propia no calificados"),
-         intensi = relevel(intensi, ref = "Subocupados"),
+         intensi = relevel(INTENSI, ref = "Subocupados"),
          informal = relevel(informal, ref = "Informal"),
          rama2_rec = fct_lump(rama2, n = 7))
 
@@ -2088,3 +2112,44 @@ DescTools::PseudoR2(multinomial)
 
 ```
 
+
+
+```{r Análisis de regresión multinomial entrada, message=FALSE, warning=FALSE, echo=FALSE}
+
+pool_trans <- pool %>%
+  filter(Periodo == "2023 Q4", !is.na(pobreza_f_t1) & !is.na(pobreza_f), ESTADO == 1) %>%
+  mutate(transicion = case_when(
+    pobreza_f == "Pobre"     & pobreza_f_t1 == "Pobre"     ~ "Pobre-Pobre",
+    pobreza_f == "Pobre"     & pobreza_f_t1 == "No pobre"  ~ "Pobre-NoPobre",
+    pobreza_f == "No pobre"  & pobreza_f_t1 == "Pobre"     ~ "NoPobre-Pobre",
+    pobreza_f == "No pobre"  & pobreza_f_t1 == "No pobre"  ~ "NoPobre-NoPobre",
+    TRUE ~ NA_character_
+  )) %>%
+  mutate(transicion = factor(transicion,
+                             levels = c("Pobre-Pobre", "Pobre-NoPobre", "NoPobre-Pobre", "NoPobre-NoPobre")),
+         ocupados_dif = ocupados_t1 - ocupados,
+         horas_dif = horas_t1 - horas,
+         cobhe_f = relevel(cobhe_f, ref = "Cuenta propia no calificados"),
+         intensi = relevel(INTENSI, ref = "Subocupados"),
+         informal = relevel(informal, ref = "Informal"),
+         rama2_rec = fct_lump(rama2, n = 7))
+
+multinomial <- multinom(transicion ~ sector + rama2_rec + ocupados_dif + horas_dif + informal + intensi,
+               data = pool_trans, trace = F)
+
+tidied <- tidy(multinomial)
+tidied$estimate <- exp(tidied$estimate)
+
+models <- list()
+models[["Pobre-NoPobre"]] <- tidy_replace(multinomial, tidied[tidied$y.level == "Pobre-NoPobre", ])
+models[["NoPobre-Pobre"]] <- tidy_replace(multinomial, tidied[tidied$y.level == "NoPobre-Pobre", ])
+models[["NoPobre-NoPobre"]] <- tidy_replace(multinomial, tidied[tidied$y.level == "NoPobre-NoPobre", ])
+
+export_summs(models,
+             error_pos = "right",
+             stars = c(`***` = 0.01, `**` = 0.05, `*` = 0.1)
+             )
+
+DescTools::PseudoR2(multinomial)
+
+```
