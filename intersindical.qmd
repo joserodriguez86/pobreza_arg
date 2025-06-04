@@ -1754,7 +1754,7 @@ ggsave("salidas/ingresos_rama2.png", dpi = 300, width = 8, height = 5)
 ## Estrategias del hogar
 
 ```{r estrategias, message=FALSE, warning=FALSE, echo=FALSE}
-  |tabla1 <- eph_hogar %>%
+tabla1 <- eph_hogar %>%
   group_by(ANO4, V13) %>% 
   tally(PONDERA) %>% 
   group_by(ANO4) %>%

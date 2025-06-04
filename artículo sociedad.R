@@ -120,12 +120,11 @@ eph <- eph %>%
          rama = factor(substr(caes_eph_label, start = 1, stop = 28)),
          rama2 = substr(caes_seccion_label, start = 1, stop = 60),
          rama2 = factor(str_to_sentence(rama2)),
-         rama4 = factor(case_when(caes_seccion_cod %in% c("B", "J", "K", "L", "M", "N",
+         rama3 = factor(case_when(caes_seccion_cod %in% c("B", "J", "K", "L", "M", "N",
                                                    "U") ~ 1,
-                           caes_seccion_cod %in% c("A", "C", "D", "E", "F", "G", "H", "I", "R", "S") ~ 2,
-                           caes_seccion_cod %in% c("O", "P", "Q") ~ 3,
-                           caes_seccion_cod == "T" ~ 4),
-                        labels = c("Privado1", "Privado2", "Público", "Doméstico")),
+                           caes_seccion_cod %in% c("A", "C", "D", "E", "F", "G", "H", "I", "R", "S", "T") ~ 2,
+                           caes_seccion_cod %in% c("O", "P", "Q") ~ 3),
+                        labels = c("Privado1", "Privado2", "Público")),
          informal = factor(case_when(ESTADO == 1 & CAT_OCUP == 3 & 
                                        (PP07H == 1) ~ "Formal",
                                      ESTADO == 1 & CAT_OCUP == 3 & 
@@ -386,10 +385,422 @@ eph <- eph %>%
   mutate(miembros = n())
 
 
+# Evolución de la pobreza ------------------------------
+
+pobreza <- eph %>%
+  group_by(ano_trim) %>% 
+  summarise(porcentaje_pobreza = weighted.mean(pobreza_dic, PONDIH, na.rm = T),
+            porcentaje_indigencia = weighted.mean(indigente, PONDIH, na.rm = T)) %>% 
+  pivot_longer(cols = c(porcentaje_pobreza, porcentaje_indigencia), names_to = "situacion", values_to = "porcentaje") 
+
+pobreza %>% 
+  ggplot(mapping = aes(x = as.character(ano_trim), y = porcentaje, colour = situacion,
+                       group = situacion)) +
+  geom_line(linewidth = .7) +
+  geom_point(data = filter(pobreza, (ano_trim %in% c("2017-III", "2022-I", "2024-IV") & situacion == "porcentaje_pobreza")), size = 2, color = "black") +
+  geom_vline(xintercept = c("2018-IV", "2020-II", "2024-I"),
+             linetype = "dashed", color = "black") +
+  ggrepel::geom_text_repel(data = . %>% filter(ano_trim %in% c("2017-III", 
+                                                               "2022-I", "2024-IV")
+                                               & situacion == "porcentaje_pobreza"),
+                           aes(label = scales::percent(porcentaje, accuracy = 0.1)),
+                           size = 3,
+                           nudge_y = -0.01,
+                           show.legend = FALSE) +
+  # labs(title = "Evolucion de la población bajo la línea de pobreza e indigencia",
+  #      subtitle = "Argentina urbana, 2016-2024 (trimestres)",
+  #      caption = "Fuente: elaboración propia en base a EPH-INDEC.") +
+  theme(plot.title = element_text(size = 12),
+        plot.subtitle = element_text(size = 10),
+        legend.title = element_blank(),
+        legend.text = element_text(size = 10),
+        legend.key.height=unit(1, "cm"),
+        axis.title.x = element_blank(),
+        axis.title.y = element_blank(),
+        axis.text.y = element_text(size = 9),
+        axis.text.x = element_text(size = 9, angle = 45, hjust = 1),
+        plot.caption = element_text(size = 9, hjust = 1),
+        panel.grid = element_line(size = .2),
+        legend.background = element_blank(),
+        legend.position = "bottom") +
+  scale_color_d3(labels=c("Indigencia", "Pobreza")) +
+  scale_y_continuous(breaks = seq(0, .6, by = 0.05), limits = c(0, .6), 
+                     labels = scales::percent_format(accuracy = 1L))
+
+ggsave("salidas_articulo/pobreza_evolucion.png", dpi = 300, width = 8, height = 5)
+
+## Por clase
+graf <- eph %>%
+  filter(CH06 >= 18, ESTADO == 1) %>% 
+  filter(ANO4 %in% c(2023, 2024), 
+         !is.na(cobhe_f)) %>%
+  filter(!ano_trim %in% c("2023-I", "2023-II")) %>% 
+  group_by(ano_trim, cobhe_f) %>% 
+  summarise(porcentaje_pobreza = weighted.mean(pobreza_dic, PONDIH, na.rm = T)) 
+
+graf_prom <- eph %>% 
+  filter(CH06 >= 18, ESTADO == 1) %>% 
+  filter(ANO4 %in% c(2023, 2024), 
+         !is.na(cobhe_f)) %>%
+  filter(!ano_trim %in% c("2023-I", "2023-II")) %>%  
+  group_by(ano_trim) %>% 
+  summarise(porcentaje_pobreza = weighted.mean(pobreza_dic, PONDIH, na.rm = T)) %>% 
+  mutate(cobhe_f = "Promedio")
+
+graf <- bind_rows(graf, graf_prom)
+
+graf$cobhe_f <- factor(graf$cobhe_f, levels = c('Propietarios y directivos >5',
+                                                'Propietarios y directivos <=5',
+                                                'Cuenta propia profesionales / calificados',
+                                                'Trabajadores no manuales >5',
+                                                'Trabajadores manuales >5',
+                                                'Trabajadores no manuales <=5',
+                                                'Trabajadores manuales <=5',
+                                                'Cuenta propia no calificados',
+                                                'Promedio'))
+
+graf %>% 
+  ggplot(mapping = aes(x = cobhe_f, y = porcentaje_pobreza, fill = cobhe_f == "Promedio")) +
+  geom_col(alpha = .7) +
+  geom_text(aes(label = scales::percent(porcentaje_pobreza, accuracy = 0.1)), 
+            position = position_stack(0.6),
+            size = 2.5) +
+  scale_fill_manual(values = c("lightblue", "red")) +
+  labs(y = "% Pobreza",
+       title = "Evolución de la pobreza según clase social",
+       subtitle = "Argentina urbana, 2023-2024 (trimestres). Población ocupada mayor a 18 años.",
+       caption = "Fuente: elaboración propia en base a EPH-INDEC.") +
+  theme(axis.title.x = element_blank(),
+        axis.title.y = element_blank(),
+        axis.text.y = element_text(size = 7),
+        axis.text.x = element_text(size = 7),
+        plot.caption = element_text(size = 9, hjust = 1),
+        plot.subtitle = element_text(size = 10),
+        panel.grid = element_line(size = .2),
+        legend.position = "none") +
+  scale_x_discrete(limits = rev(levels(graf$cobhe_f)),
+                   labels = function(x) str_wrap(x, width = 30)) +
+  scale_y_continuous(labels= scales::percent_format(accuracy = 1L), breaks=seq(0, 6, 0.1)) + 
+  coord_flip() +
+  facet_wrap(~ano_trim)
+
+
+ggsave("salidas_articulo/pobreza_clase.png", dpi = 300, width = 7, height = 5)
+
+graf %>%
+  pivot_wider(names_from = ano_trim, values_from = porcentaje_pobreza) %>% 
+  mutate(diferencia = abs((`2024-IV` - `2024-I`)/`2024-I`)) %>% 
+  select(cobhe_f, diferencia) %>% 
+  ggplot(mapping = aes(x = cobhe_f, y = diferencia, fill = cobhe_f == "Promedio")) +
+  geom_col(alpha = .7) +
+  geom_text(aes(label = scales::percent(diferencia, accuracy = 0.1, suffix = "")), 
+            position = position_stack(0.95),
+            size = 3.5) +
+  geom_hline(yintercept = 0.371, linetype = "dashed") +
+  scale_fill_manual(values = c("lightblue", "red")) +
+  # labs(title = "Disminución porcentual (1er y 4to trimestre) de la pobreza \npor clase social",
+  #      subtitle = "Argentina urbana, 2024. Población ocupada mayor a 18 años.",
+  #      caption = "Fuente: elaboración propia en base a EPH-INDEC.") +
+  theme(axis.title.x = element_blank(),
+        axis.title.y = element_blank(),
+        axis.text.y = element_text(size = 10),
+        axis.text.x = element_text(size = 10),
+        plot.caption = element_text(size = 9, hjust = 1),
+        panel.grid = element_line(size = .2),
+        legend.position = "none") +
+  scale_x_discrete(limits = rev(levels(graf$cobhe_f)),
+                   labels = function(x) str_wrap(x, width = 30)) +
+  scale_y_continuous(labels= scales::percent_format(accuracy = 1L), breaks=seq(0, 6, 0.1)) + 
+  coord_flip()
+
+ggsave("salidas_articulo/pobreza_clase_diferencia.png", dpi = 300, width = 8, height = 5)
+
+
+
+## Por rama
+graf <- eph %>%
+  filter(CH06 >= 18, ESTADO == 1) %>% 
+  filter(ANO4 %in% c(2023, 2024), 
+         !is.na(rama2)) %>%
+  filter(!ano_trim %in% c("2023-I", "2023-II")) %>% 
+  group_by(ano_trim, rama2) %>% 
+  summarise(porcentaje_pobreza = weighted.mean(pobreza_dic, PONDIH, na.rm = T)) 
+
+graf_prom <- eph %>% 
+  filter(CH06 >= 18, ESTADO == 1) %>% 
+  filter(ANO4 %in% c(2023, 2024), 
+         !is.na(rama2)) %>%
+  filter(!ano_trim %in% c("2023-I", "2023-II")) %>%  
+  group_by(ano_trim) %>% 
+  summarise(porcentaje_pobreza = weighted.mean(pobreza_dic, PONDIH, na.rm = T)) %>% 
+  mutate(rama2 = "Promedio")
+
+graf <- bind_rows(graf, graf_prom)
+
+tabla_pivot <- graf %>%
+  pivot_wider(names_from = ano_trim, values_from = porcentaje_pobreza) %>% 
+  mutate(variacion = (`2024-IV` - `2023-III`) / `2023-III`) 
+
+
+tabla_pivot %>%
+  filter(!is.na(variacion), rama2 %in% c("Promedio", "Comercio al por mayor y al por menor; reparación de vehículo",
+                                         "Industria manufacturera", "Construcción", "Administración pública y defensa; planes de seguro social ob",
+                                         "Enseñanza", "Salud humana y servicios sociales",
+                                         "Actividades de los hogares como empleadores de personal domé",
+                                         "Transporte y almacenamiento", "Alojamiento y servicios de comidas", "Actividades profesionales, científicas y técnicas")) %>% 
+  ggplot(aes(x = fct_reorder(rama2, variacion), y = variacion)) +
+  geom_segment(aes(x = rama2, xend = rama2, y = 0, yend = variacion)) + 
+  geom_point() + # Usar columnas calculadas
+  labs(
+    # title = "Variación del ingreso según rama de actividad",
+    #    subtitle = "Argentina urbana, 2023-III / 2024-IV",
+    #    caption = "Fuente: Elaboración propia en base a EPH-INDEC"
+    ) +
+  theme(legend.position = "none",
+        title = element_text(size = 12),
+        plot.caption = element_text(size = 9, hjust = 1),
+        axis.title.y = element_blank(),
+        axis.title.x = element_blank(),
+        axis.text.y = element_text(size = 10),
+        axis.text.x = element_text(size = 10)) +
+  scale_x_discrete(labels = function(x) str_wrap(x, width = 40)) +
+  scale_y_continuous(labels = scales::percent_format(accuracy = 1L), breaks = seq(-0.2, 0.2, by = 0.05)) +
+  coord_flip()
+
+ggsave("salidas_articulo/pobreza_rama.png", dpi = 300, width = 9, height = 5)
+
+
+# Capacidad de compra ---------------------------
+cc_total <- eph %>% 
+  group_by(ANO4) %>% 
+  summarise(cc_total = weighted.mean(peso_canasta, PONDIH, na.rm = T))
+
+cc_nopobre <- eph %>% 
+  filter(pobreza_dic == 0) %>% 
+  group_by(ANO4) %>% 
+  summarise(cc_nopobre = weighted.mean(peso_canasta, PONDIH, na.rm = T))
+
+cc_mayores <- eph %>% 
+  filter(CH06 >= 65) %>% 
+  group_by(ANO4) %>% 
+  summarise(cc_mayores = weighted.mean(peso_canasta, PONDIH, na.rm = T))
+
+cc_jubilacion <- eph %>% 
+  filter(CH06 >= 65) %>% 
+  group_by(ANO4) %>% 
+  mutate(peso_canasta_jub = ifelse(ano_trim != "2024-IV", V2_M / (adequi * CBT),
+                                   (V2_01_M + V2_02_M) / (adequi * CBT))) %>% 
+  summarise(cc_jubilacion = weighted.mean(peso_canasta_jub, PONDII, na.rm = T))
+
+
+
+graf <- left_join(cc_total, cc_nopobre, by = "ANO4") %>% 
+  left_join(cc_mayores, by = "ANO4") %>% 
+  left_join(cc_jubilacion, by = "ANO4") %>%
+  pivot_longer(cols = c(cc_total, cc_nopobre, cc_mayores, cc_jubilacion), names_to = "tipo", values_to = "peso_canasta") %>% 
+  mutate(tipo = factor(tipo, levels = c("cc_total", "cc_nopobre", "cc_mayores", "cc_jubilacion"),
+                      labels = c("ITF población total", "ITF población no pobre", "ITF mayores de 65 años", "Jubilacion mayores de 65 años")))
+
+graf %>% 
+  ggplot(aes(x = as.character(ANO4), y = peso_canasta, colour = tipo, group = tipo)) +
+  geom_point() +
+  geom_line() +
+  ggrepel::geom_text_repel(
+    aes(label = ifelse(ANO4 %in% c(2016, 2024), 
+                       scales::number(peso_canasta, accuracy = 0.01), 
+                       NA)),
+    size = 3,
+    nudge_y = 0.01,
+    show.legend = FALSE,
+    na.rm = TRUE
+  ) +
+  labs(
+    # title = "Evolución de la capacidad de compra del ingreso total familiar medida en canastas",
+    #    subtitle = "Argentina urbana, 2016-2024. ",
+    #    caption = "Fuente: elaboración propia en base a EPH-INDEC."
+    ) +
+  theme(plot.title = element_text(size = 12),
+        plot.subtitle = element_text(size = 10),
+        legend.title = element_blank(),
+        legend.text = element_text(size = 10),
+        legend.key.height=unit(1, "cm"),
+        axis.title.x = element_blank(),
+        axis.title.y = element_blank(),
+        axis.text.y = element_text(size =10),
+        axis.text.x = element_text(size = 10),
+        plot.caption = element_text(size = 9, hjust = 1),
+        panel.grid = element_line(linewidth = .2),
+        strip.text = element_text(face = "bold"),
+        legend.background = element_blank()) +
+  scale_color_d3(labels = function(x) str_wrap(x, width = 15)) +
+  scale_y_continuous(breaks = seq(1, 3.5, by = 0.5), limits = c(1, 3.5))
+
+
+ggsave("salidas_articulo/capacidad_compra.png", dpi = 300, width = 8, height = 5)
+
+
+
+rama1 <- eph %>% 
+  filter(CAT_OCUP == 3, PP07H == 1, rama2 %in% c("Industria manufacturera",
+                                                 "Comercio al por mayor y al por menor; reparación de vehículo",
+                                                 "Construcción",
+                                                 "Alojamiento y servicios de comidas")) %>% 
+  mutate(peso_canastap21 = P21 / (adequi * CBT)) %>% 
+  group_by(ANO4, rama2) %>% 
+  summarise(peso_canasta = weighted.mean(peso_canastap21, PONDIIO, na.rm = T)) %>% 
+  ggplot(aes(x = as.character(ANO4), y = peso_canasta, color = rama2, group = rama2)) +
+  geom_line(linewidth = .8) +
+  geom_point(size = 1.5) +
+  ggrepel::geom_text_repel(aes(label = ifelse(ANO4 %in% c(2016, 2024), 
+                                              scales::number(peso_canasta, accuracy = 0.01), 
+                                              NA)), 
+                           size = 3,
+                           nudge_y = 0.1,
+                           show.legend = FALSE) +
+  labs(
+    # title = "Evolución de la capacidad de compra del ingreso laboral medida en canastas",
+    #    subtitle = "Argentina urbana, 2016-2024. Ramas de actividad asociadas al sector privado",
+    #    caption = "Fuente: elaboración propia en base a EPH-INDEC."
+    ) +
+  theme(plot.title = element_text(size = 12),
+        plot.subtitle = element_text(size = 10),
+        legend.title = element_blank(),
+        legend.position = "bottom",
+        legend.text = element_text(size = 8),
+        legend.key.height=unit(1, "cm"),
+        axis.title.x = element_blank(),
+        axis.title.y = element_blank(),
+        axis.text.y = element_text(size = 9),
+        axis.text.x = element_text(size = 9),
+        plot.caption = element_text(size = 9, hjust = 1),
+        panel.grid = element_line(size = .2),
+        strip.text = element_text(face = "bold"),
+        legend.background = element_blank()) +
+  scale_color_d3(labels = function(x) str_wrap(x, width = 20)) +
+  scale_y_continuous(breaks = seq(0, 5, by = 0.5), limits = c(1.5, 5),
+                     labels = scales::number_format(accuracy = 0.01))
+
+
+
+rama2 <- eph %>% 
+  filter(CAT_OCUP == 3, PP07H == 1, rama2 %in% c("Enseñanza",
+                                                 "Salud humana y servicios sociales",
+                                                 "Administración pública y defensa; planes de seguro social ob")) %>% 
+  mutate(peso_canastap21 = P21 / (adequi * CBT)) %>% 
+  group_by(ANO4, rama2) %>% 
+  summarise(peso_canasta = weighted.mean(peso_canastap21, PONDIIO, na.rm = T)) %>% 
+  ggplot(aes(x = as.character(ANO4), y = peso_canasta, color = rama2, group = rama2)) +
+  geom_line(linewidth = .8) +
+  geom_point(size = 1.5) +
+  ggrepel::geom_text_repel(aes(label = ifelse(ANO4 %in% c(2016, 2024), 
+                                              scales::number(peso_canasta, accuracy = 0.01), 
+                                              NA)), 
+                           size = 3,
+                           nudge_y = 0.1,
+                           show.legend = FALSE) +
+  labs(
+    # title = "Evolución de la capacidad de compra del ingreso laboral medida en canastas",
+    #    subtitle = "Argentina urbana, 2016-2024. Ramas de actividad asociadas al sector público",
+    #    caption = "Fuente: elaboración propia en base a EPH-INDEC."
+    ) +
+  theme(plot.title = element_text(size = 12),
+        plot.subtitle = element_text(size = 10),
+        legend.position = "bottom",
+        legend.title = element_blank(),
+        legend.text = element_text(size = 8),
+        legend.key.height=unit(1, "cm"),
+        axis.title.x = element_blank(),
+        axis.title.y = element_blank(),
+        axis.text.y = element_text(size = 9),
+        axis.text.x = element_text(size = 9),
+        plot.caption = element_text(size = 9, hjust = 1),
+        panel.grid = element_line(size = .2),
+        strip.text = element_text(face = "bold"),
+        legend.background = element_blank()) +
+  scale_color_d3(labels = function(x) str_wrap(x, width = 20)) +
+  scale_y_continuous(breaks = seq(0, 5, by = 0.5), limits = c(1.5, 5),
+                     labels = scales::number_format(accuracy = 0.01))
+
+
+rama1 + rama2
+
+
+ggsave("salidas_articulo/peso_canasta_asalariados_rama.png", dpi = 300, width = 9, height = 5)
+
+
+
+# Estrategias familiares
+tabla1 <- eph %>%
+  filter(CH03 == 1) %>% 
+  group_by(ANO4, V13) %>% 
+  tally(PONDERA) %>% 
+  group_by(ANO4) %>%
+  mutate(ahorro = n / sum(n)) %>% 
+  filter(V13 == 1) %>% 
+  select(ANO4, ahorro)
+
+tabla2 <- eph %>%
+  filter(CH03 == 1) %>% 
+  group_by(ANO4, V14) %>% 
+  tally(PONDERA) %>% 
+  group_by(ANO4) %>%
+  mutate(prestamo_f = n / sum(n)) %>% 
+  filter(V14 == 1) %>% 
+  select(ANO4, prestamo_f)
+
+tabla3 <- eph %>%
+  filter(CH03 == 1) %>% 
+  group_by(ANO4, V15) %>% 
+  tally(PONDERA) %>% 
+  group_by(ANO4) %>%
+  mutate(prestamo_b = n / sum(n)) %>% 
+  filter(V15 == 1) %>% 
+  select(ANO4, prestamo_b)
+
+tabla <- tabla1 %>% 
+  left_join(tabla2, by = "ANO4") %>% 
+  left_join(tabla3, by = "ANO4") %>% 
+  pivot_longer(cols = c(ahorro, prestamo_f, prestamo_b), 
+               names_to = "estrategia", values_to = "n")
+
+tabla %>% 
+  ggplot(aes(x = as.character(ANO4), y = n, color = estrategia, group = estrategia)) +
+  geom_line(size = .7) +
+  geom_point(size = 1.5) +
+  geom_text(data = . %>% filter(ANO4 %in% c("2016", "2024")),
+            aes(label = scales::percent(n, accuracy = 0.1)), 
+            size = 3,
+            nudge_y = .02) +
+  labs(
+    # title = "Estrategias económicas familiares",
+    #    subtitle = "Argentina urbana, 2016-2024 (Anual).",
+    #    caption = "Fuente: elaboración propia en base a EPH-INDEC."
+    ) +
+  theme(plot.title = element_text(size = 12),
+        plot.subtitle = element_text(size = 10),
+        legend.title = element_blank(),
+        legend.text = element_text(size = 10),
+        legend.position = "bottom",
+        legend.key.height=unit(1, "cm"),
+        axis.title.x = element_blank(),
+        axis.title.y = element_blank(),
+        axis.text.y = element_text(size = 10),
+        axis.text.x = element_text(size = 10),
+        plot.caption = element_text(size = 9, hjust = 1),
+        panel.grid = element_line(size = .2),
+        strip.text = element_text(face = "bold"),
+        legend.background = element_blank()) +
+  scale_color_d3(labels = function(x) str_wrap(c("Ahorros familiares", "Préstamos bancarios / financieros", "Préstamos familiares / amigos"), width = 25)) +
+  scale_y_continuous(breaks = seq(0, .40, by = 0.05), limits = c(0, .40), 
+                     labels = scales::percent_format(accuracy = 1L))
+
+ggsave("salidas_articulo/estrategias_ahorro.png", dpi = 300, width = 8, height = 5)
+
+
 
 # Análisis de panel -----------------------------
 
-# Ponderador sin elevar
+## construcción de variable previas
 eph <- eph %>% 
   group_by(ano_trim) %>% 
   mutate(pondera_sum = sum(PONDERA),
@@ -404,13 +815,10 @@ eph <- eph %>%
   mutate(cantidad_empleos_h = sum(PP03C, na.rm = TRUE) / sum(ESTADO == 1, na.rm = TRUE),
          cantidad_ocupados_h = sum(ESTADO == 1, na.rm = TRUE),
          cantidad_horas_h = sum(horas, na.rm = TRUE) / sum(ESTADO == 1, na.rm = TRUE),
-         edad_prom = mean(CH06, na.rm = TRUE),
-         )
-  
-  
-  
-  
-  
+         edad_prom = mean(CH06, na.rm = TRUE)
+         ) %>% 
+  ungroup()
+
 
 # Paneles
 eph2024 <- eph %>% 
@@ -418,25 +826,35 @@ eph2024 <- eph %>%
   mutate(pobreza_f = factor(pobreza_dic, labels = c("No pobre", "Pobre")))
 
 pool <- organize_panels(eph2024, variables = c("ESTADO", "pobreza_f",
-                                               "empleos_cant", "INTENSI",
-                                               "informal", "rama4", "rama2",
-                                               "sector", "horas", "cobhe_f",
-                                               "ocupados", "empleos_cant",
+                                               "informal", "sector", 
+                                               "rama3",
+                                               "cantidad_horas_h", "cobhe_f",
+                                               "cantidad_ocupados_h",
+                                               "cantidad_empleos_h",
+                                               "empleos_cant",
+                                               "horas",
                                                "V13", "V14", "V15", 
                                                "ing_lab2024", "sexo", 
                                                "grupo_edad", "ing_nolab2024",
                                                "ing_horario2024",
-                                               "CH03",
+                                               "CH03", "edad_prom",
                                                "pondih_sin_elevar",
                                                "pondera_sin_elevar"), 
                         window = 'trimestral')
 
 pool <- subset(pool, consistencia == TRUE)
+pool <- pool %>% 
+  mutate(Periodo = case_when(Periodo == "2023 Q1" ~ "2023 T1",
+                             Periodo == "2023 Q2" ~ "2023 T2",
+                             Periodo == "2023 Q3" ~ "2023 T3",
+                             Periodo == "2023 Q4" ~ "2023 T4",
+                             Periodo == "2024 Q1" ~ "2024 T1",
+                             Periodo == "2024 Q2" ~ "2024 T2",
+                             Periodo == "2024 Q3" ~ "2024 T3"))
 
-#TRABAJAR CON HOGARESSSSSSSSSSSSSSS
 
 pool %>% 
-  filter(Periodo == "2024 Q2", !is.na(pobreza_f), !is.na(pobreza_f_t1)) %>%
+  filter(Periodo == "2024 T2", !is.na(pobreza_f), !is.na(pobreza_f_t1)) %>%
   group_by(pobreza_f, pobreza_f_t1) %>%
   tally() %>% 
   ungroup() %>% 
@@ -461,7 +879,7 @@ pool %>%
 
 ggsave("salidas/paneles_pobreza_2024.png", dpi = 300, width = 7, height = 5, bg = "white")
 
-periodos <- c("2023 Q3", "2023 Q4", "2024 Q1", "2024 Q2", "2024 Q3")
+periodos <- c("2023 T3", "2023 T4", "2024 T1", "2024 T2", "2024 T3")
 
 graficar_transiciones <- function(periodo_actual) {
   pool %>% 
@@ -476,7 +894,7 @@ graficar_transiciones <- function(periodo_actual) {
     geom_text(stat = "stratum", aes(label = after_stat(stratum)), size = 2.5) +
     scale_fill_d3() +
     labs(title = paste0(periodo_actual)) +
-    theme_minimal(base_size = 10) +
+    theme_void(base_size = 10) +
     theme(
       axis.title.x = element_blank(),
       axis.title.y = element_blank(),
@@ -492,39 +910,42 @@ graficar_transiciones <- function(periodo_actual) {
 
 graficos <- map(periodos, graficar_transiciones)
 
-grafico_final <- wrap_plots(graficos, ncol = 2) +
-  plot_annotation(
-    title = "Transiciones en la situación de pobreza por trimestre",
-    subtitle = "Argentina urbana, 2023-2024",
-    caption = "Fuente: Elaboración propia en base a EPH-INDEC.",
-    theme = theme(plot.title = element_text(size = 12))
-  )
+grafico_final <- wrap_plots(graficos, ncol = 2) 
 
-ggsave("salidas/paneles_pobreza.png", dpi = 300, width = 7, height = 5)
+# +
+#   plot_annotation(
+#     title = "Transiciones en la situación de pobreza por trimestre",
+#     subtitle = "Argentina urbana, 2023-2024",
+#     caption = "Fuente: Elaboración propia en base a EPH-INDEC.",
+#     theme = theme(plot.title = element_text(size = 12))
+#   )
+
+ggsave("salidas_articulo/paneles_pobreza.png", dpi = 300, width = 7, height = 5)
 
 
-# Análisis multinomial
+## Análisis multinomial
 
 pool_trans <- pool %>%
-  filter(Periodo == "2024 Q2", ESTADO == 1, CH06 >= 18, CH03 == 1) %>%
+  filter(Periodo == "2024 T2", ESTADO == 1, CH03 == 1) %>%
   mutate(transicion = case_when(
-    pobreza_f == "Pobre"     & pobreza_f_t1 == "Pobre"     ~ "Pobre-Pobre",
-    pobreza_f == "Pobre"     & pobreza_f_t1 == "No pobre"  ~ "Pobre-NoPobre",
-    pobreza_f == "No pobre"  & pobreza_f_t1 == "Pobre"     ~ "NoPobre-Pobre",
-    pobreza_f == "No pobre"  & pobreza_f_t1 == "No pobre"  ~ "NoPobre-NoPobre",
+    pobreza_f == "Pobre"     & pobreza_f_t1 == "Pobre"     ~ "Pobre - Pobre",
+    pobreza_f == "Pobre"     & pobreza_f_t1 == "No pobre"  ~ "Pobre - No pobre",
+    pobreza_f == "No pobre"  & pobreza_f_t1 == "Pobre"     ~ "No pobre - Pobre",
+    pobreza_f == "No pobre"  & pobreza_f_t1 == "No pobre"  ~ "No pobre - No pobre",
     TRUE ~ NA_character_
   )) %>%
   mutate(transicion = factor(transicion,
-                             levels = c("Pobre-Pobre", "Pobre-NoPobre", "NoPobre-Pobre", "NoPobre-NoPobre")),
-         transicion = relevel(transicion, ref = "NoPobre-NoPobre"),
-         empleos_cant = factor(case_when(empleos_cant == "Un empleo" &
-                                           empleos_cant_t1 == "Un empleo" ~ "Mantuvo cantidad empleo",
-                                         empleos_cant == "Un empleo" &
-                                           empleos_cant_t1 == "Más de un empleo" ~ "Aumentó cantidad empleo",
-                                         empleos_cant == "Más de un empleo" &
-                                           empleos_cant_t1 == "Un empleo" ~ "Disminuyó cantidad empleo",
-                                         TRUE ~ NA_character_)),
-         empleos_cant = relevel(empleos_cant, ref = "Mantuvo cantidad empleo"),
+                             levels = c("Pobre - Pobre", "Pobre - No pobre", "No pobre - Pobre", "No pobre - No pobre")),
+         transicion = relevel(transicion, ref = "No pobre - No pobre"),
+         cantidad_empleos_h = cantidad_empleos_h_t1 - cantidad_empleos_h,
+         cantidad_empleos_j = case_when(empleos_cant == "Un empleo" & empleos_cant_t1 == "Un empleo" ~ "Mantuvo misma cantidad",
+                                        empleos_cant == "Más de un empleo" & empleos_cant_t1 == "Más de un empleo" ~ "Mantuvo misma cantidad",
+                                        empleos_cant == "Un empleo" & empleos_cant_t1 == "Más de un empleo" ~ "Aumentó la cantidad de empleos",
+                                        empleos_cant == "Más de un empleo" & empleos_cant_t1 == "Un empleo" ~ "Disminuyó la cantidad de empleos"),
+         cantidad_empleos_j = factor(cantidad_empleos_j, levels = c("Mantuvo misma cantidad", "Aumentó la cantidad de empleos", "Disminuyó la cantidad de empleos")),
+         cantidad_ocupados_h = cantidad_ocupados_h_t1 - cantidad_ocupados_h,
+         cantidad_horas_h = cantidad_horas_h_t1 - cantidad_horas_h,
+         cantidad_horas_j = horas_t1 - horas,
          ahorros = case_when(V13 == 1 | V13_t1 == 1 ~ "Uso ahorros",
                             TRUE ~ "No uso ahorros"),
          ahorros = factor(ahorros, levels = c("No uso ahorros", "Uso ahorros")),
@@ -534,43 +955,144 @@ pool_trans <- pool %>%
          prestamo_b = case_when(V15 == 1 | V15_t1 == 1 ~ "Uso préstamo bancario",
                             TRUE ~ "No uso préstamo bancario"),
          prestamo_b = factor(prestamo_b, levels = c("No uso préstamo bancario", "Uso préstamo bancario")),
-         ocupados_dif = ocupados_t1 - ocupados,
-         horas_dif = horas_t1 - horas,
          cobhe_f = relevel(cobhe_f, ref = "Cuenta propia no calificados"),
-         intensi = relevel(INTENSI, ref = "Ocupados plenos"),
          informal = relevel(informal, ref = "Informal"),
          grupo_edad = relevel(grupo_edad, ref = "65 años o más"),
          ingresos_lab = ing_lab2024_t1 - ing_lab2024,
          ingresos_nolab = ing_nolab2024_t1 - ing_nolab2024,
          ingresos_horarios = ing_horario2024_t1 - ing_horario2024)
 
-multinomial <- multinom(transicion ~ sexo + grupo_edad + sector + ocupados_dif +
-                          horas_dif + empleos_cant + informal + ahorros + prestamo_b + prestamo_f,
-                        data = pool_trans, weights = pondih_sin_elevar_t1, trace = F)
+multinomial <- multinom(transicion ~ sexo + edad_prom + rama3 + cantidad_ocupados_h +
+                          cantidad_horas_h + cantidad_empleos_j + informal + ahorros + prestamo_b + prestamo_f,
+                        data = pool_trans, weights = pondih_sin_elevar_t1, trace = F,
+                        model = TRUE)
 
 tidied <- tidy(multinomial)
 tidied$estimate <- exp(tidied$estimate)
 
 models <- list()
-models[["Pobre-NoPobre"]] <- tidy_replace(multinomial, tidied[tidied$y.level == "Pobre-NoPobre", ])
-models[["NoPobre-Pobre"]] <- tidy_replace(multinomial, tidied[tidied$y.level == "NoPobre-Pobre", ])
-models[["Pobre-Pobre"]] <- tidy_replace(multinomial, tidied[tidied$y.level == "Pobre-Pobre", ])
+models[["Pobre - No pobre"]] <- tidy_replace(multinomial, tidied[tidied$y.level == "Pobre - No pobre", ])
+models[["No pobre - Pobre"]] <- tidy_replace(multinomial, tidied[tidied$y.level == "No pobre - Pobre", ])
+models[["Pobre - Pobre"]] <- tidy_replace(multinomial, tidied[tidied$y.level == "Pobre - Pobre", ])
 
 export_summs(models,
-             error_pos = "below",
-             stars = c(`***` = 0.01, `**` = 0.05, `*` = 0.1)
-)
+             error_pos = "right",
+             model.names = c("Pobre -> No pobre", "No pobre -> Pobre", "Pobre -> Pobre"),
+             stars = c(`***` = 0.01, `**` = 0.05, `*` = 0.1),
+             scale = T,
+             robust = T,
+             coefs = c("Mujer (jh)" = "sexoMujer",
+                       "Edad promedio del hogar" = "edad_prom",
+                       "Privado tradicional (ref = privado dinámico" = "rama3Privado2",
+                       "Público" = "rama3Público",
+                       "Diferencia cantidad de ocupados hogar" = "cantidad_ocupados_h",
+                       "Diferencia cantidad de horas trabajadas hogar" = "cantidad_horas_h",
+                       "Aumento número de trabajos (ref = mantuvo)" = "cantidad_empleos_jAumentó la cantidad de empleos",
+                       "Disminución número de trabajos " = "cantidad_empleos_jDisminuyó la cantidad de empleos",
+                       "Informal (jh)" = "informalFormal",
+                       "Uso ahorros" = "ahorrosUso ahorros",
+                       "Uso préstamo bancario" = "prestamo_bUso préstamo bancario",
+                       "Uso préstamo familiar" = "prestamo_fUso préstamo familiar"),
+             to.file = "docx", file.name = "salidas_articulo/reg_multi.docx")
 
-DescTools::PseudoR2(multinomial)
+
+DescTools::PseudoR2(multinomial, which = "all")
 
 # Average marginal effects
 ame <- avg_slopes(multinomial)
 
+# ame %>% 
+#   filter(term == "rama3") %>% 
+#   ggplot(aes(x = contrast, y = estimate)) +
+#   geom_hline(yintercept = 0, linewidth = .4, linetype = "dashed") +
+#   geom_pointrange(aes(ymin = conf.low, ymax = conf.high), size = 0.3) +
+#   facet_wrap(~ group, ncol=4)
+
+g1 <- ame %>% 
+  filter(term == "cantidad_ocupados_h") %>% 
+  ggplot(aes(x=group, y = estimate)) +
+  geom_hline(yintercept = 0, linewidth = .4, linetype = "dashed") +
+  geom_pointrange(aes(ymin = conf.low, ymax = conf.high), size = 0.5) +
+  labs(title = "Diferencia total ocupados en el hogar") +
+  theme(
+    plot.title = element_text(size = 11),
+    axis.title.x = element_blank(),
+    axis.title.y = element_blank(),
+    axis.text.x = element_text(size = 10, angle = 45, hjust = 1),
+    axis.text.y = element_text(size = 10)
+  ) +
+  scale_y_continuous(breaks = seq(-.1, .1, by = .02), limits = c(-.1, .1)) +
+  scale_x_discrete(labels = function(x) str_wrap(c("No pobre - No pobre", 
+                                                   "Pobre - Pobre",
+                                                   "Pobre - No pobre",
+                                                   "No pobre - Pobre"), width = 15))
 
 
-# estimated marginal means
-ggemmeans(multinomial, terms = "ocupados_dif[-1:1 by = .5]") %>% 
-  plot(connect_lines = TRUE, show_ci = F) 
+g2 <- ame %>% 
+  filter(term == "cantidad_horas_h") %>% 
+  ggplot(aes(x=group, y = estimate)) +
+  geom_hline(yintercept = 0, linewidth = .4, linetype = "dashed") +
+  geom_pointrange(aes(ymin = conf.low, ymax = conf.high), size = 0.5) +
+  labs(title = "Diferencia horas trabajadas en el hogar") +
+  theme(
+    
+    plot.title = element_text(size = 11),
+    axis.title.x = element_blank(),
+    axis.title.y = element_blank(),
+    axis.text.x = element_text(size = 10, angle = 45, hjust = 1),
+    axis.text.y = element_text(size = 10)
+  ) +
+  scale_y_continuous(breaks = seq(-.004, .003, by = .001), limits = c(-.004, .003)) +
+  scale_x_discrete(labels = function(x) str_wrap(c("No pobre - No pobre", 
+                                                   "Pobre - Pobre",
+                                                   "Pobre - No pobre",
+                                                   "No pobre - Pobre"), width = 15))
 
-ggemmeans(multinomial, terms = "horas_dif[0:25 by = 5]") %>% 
-  plot(connect_lines = TRUE, show_ci = F) 
+g1 + g2
+
+ggsave("salidas_articulo/ame_ocupados_horas.png", dpi = 300, width = 8, height = 4)
+
+ame %>% 
+  filter(term == "cantidad_empleos_j") %>% 
+  ggplot(aes(x = contrast, y = estimate)) +
+  geom_hline(yintercept = 0, linewidth = .4, linetype = "dashed") +
+  geom_pointrange(aes(ymin = conf.low, ymax = conf.high), size = 0.5) +
+  theme(
+    axis.title.x = element_blank(),
+    axis.title.y = element_blank(),
+    axis.text.x = element_text(size = 10),
+    strip.text = element_text(size = 11)
+  ) +
+  scale_x_discrete(labels = function(x) str_wrap(c("Aumentó la cantidad de empleos", "Disminuyó la cantidad de empleos"), width = 20)) +
+  scale_y_continuous(breaks = seq(-.2, .2, by = .05), limits = c(-.2, .2)) +
+  facet_wrap(~ group)
+
+ggsave("salidas_articulo/ame_empleos.png", dpi = 300, width = 7, height = 5)
+
+
+ame %>% 
+  filter(term %in% c("ahorros", "prestamo_b", "prestamo_f")) %>% 
+  ggplot(aes(x = str_wrap(group, width = 10), y = estimate, ymin = conf.low, ymax = conf.high)) +
+  geom_hline(yintercept = 0, linewidth = .4, linetype = "dashed") +
+  geom_pointrange(position = position_jitter(width = 0.3), size = .5) +
+  theme(
+    axis.title.x = element_blank(),
+    axis.title.y = element_blank(),
+    axis.text.x = element_text(size = 8, angle = 45, hjust = 1),
+    axis.text.y = element_text(size = 8),
+    strip.text = element_text(size = 10),
+  ) +
+  scale_y_continuous(limits = c(-.25, .2), breaks = seq(-.25, .2, by = .05)) +
+  facet_wrap(
+    ~ term,
+    labeller = as_labeller(c(
+      "ahorros" = "Uso de ahorros propios",
+      "prestamo_b" = "Pidió préstamo a banco / financiera",
+      "prestamo_f" = "Pidió préstamo a familiares o amigos"
+    ))
+  )
+
+ggsave("salidas_articulo/ame_prestamos.png", dpi = 300, width = 8, height = 4)
+
+
+
