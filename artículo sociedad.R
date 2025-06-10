@@ -586,7 +586,7 @@ cc_mayores <- eph %>%
   summarise(cc_mayores = weighted.mean(peso_canasta, PONDIH, na.rm = T))
 
 cc_jubilacion <- eph %>% 
-  filter(CH06 >= 65) %>% 
+  filter(CH06 >= 65 & CAT_INAC == 1) %>% 
   group_by(ANO4) %>% 
   mutate(peso_canasta_jub = ifelse(ano_trim != "2024-IV", V2_M / (adequi * CBT),
                                    (V2_01_M + V2_02_M) / (adequi * CBT))) %>% 
@@ -599,7 +599,7 @@ graf <- left_join(cc_total, cc_nopobre, by = "ANO4") %>%
   left_join(cc_jubilacion, by = "ANO4") %>%
   pivot_longer(cols = c(cc_total, cc_nopobre, cc_mayores, cc_jubilacion), names_to = "tipo", values_to = "peso_canasta") %>% 
   mutate(tipo = factor(tipo, levels = c("cc_total", "cc_nopobre", "cc_mayores", "cc_jubilacion"),
-                      labels = c("ITF población total", "ITF población no pobre", "ITF mayores de 65 años", "Jubilacion mayores de 65 años")))
+                      labels = c("Población total", "Población no pobre", "Mayores de 65 años", "Mayores de 65 años (jubilación)")))
 
 graf %>% 
   ggplot(aes(x = as.character(ANO4), y = peso_canasta, colour = tipo, group = tipo)) +
@@ -632,7 +632,7 @@ graf %>%
         panel.grid = element_line(linewidth = .2),
         strip.text = element_text(face = "bold"),
         legend.background = element_blank()) +
-  scale_color_d3(labels = function(x) str_wrap(x, width = 15)) +
+  scale_color_d3(labels = function(x) str_wrap(x, width = 20)) +
   scale_y_continuous(breaks = seq(1, 3.5, by = 0.5), limits = c(1, 3.5))
 
 
