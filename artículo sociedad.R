@@ -883,9 +883,9 @@ periodos <- c("2023 T3", "2023 T4", "2024 T1", "2024 T2", "2024 T3")
 
 graficar_transiciones <- function(periodo_actual) {
   pool %>% 
-    filter(Periodo == periodo_actual, !is.na(pobreza_f), !is.na(pobreza_f_t1)) %>%
+    filter(Periodo == periodo_actual, !is.na(pobreza_f)) %>%
     group_by(pobreza_f, pobreza_f_t1) %>%
-    tally() %>% 
+    tally(pondih_sin_elevar_t1) %>% 
     ungroup() %>% 
     mutate(percent = n/sum(n)) %>% 
     ggplot(aes(y = percent, axis1 = pobreza_f, axis2 = pobreza_f_t1)) +
@@ -912,15 +912,8 @@ graficos <- map(periodos, graficar_transiciones)
 
 grafico_final <- wrap_plots(graficos, ncol = 2) 
 
-# +
-#   plot_annotation(
-#     title = "Transiciones en la situación de pobreza por trimestre",
-#     subtitle = "Argentina urbana, 2023-2024",
-#     caption = "Fuente: Elaboración propia en base a EPH-INDEC.",
-#     theme = theme(plot.title = element_text(size = 12))
-#   )
-
 ggsave("salidas_articulo/paneles_pobreza.png", dpi = 300, width = 7, height = 5)
+
 
 
 ## Análisis multinomial
@@ -989,7 +982,7 @@ export_summs(models,
                        "Diferencia cantidad de horas trabajadas hogar" = "cantidad_horas_h",
                        "Aumento número de trabajos (ref = mantuvo)" = "cantidad_empleos_jAumentó la cantidad de empleos",
                        "Disminución número de trabajos " = "cantidad_empleos_jDisminuyó la cantidad de empleos",
-                       "Informal (jh)" = "informalFormal",
+                       "Formal (jh)" = "informalFormal",
                        "Uso ahorros" = "ahorrosUso ahorros",
                        "Uso préstamo bancario" = "prestamo_bUso préstamo bancario",
                        "Uso préstamo familiar" = "prestamo_fUso préstamo familiar"),
